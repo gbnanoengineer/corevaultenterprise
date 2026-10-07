@@ -247,3 +247,67 @@ input, select, textarea {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-glow);
 }
+
+/* Select & Option Fix for Dark Theme Dropdowns */
+select {
+  color-scheme: dark;
+}
+
+select option {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  padding: 10px 14px;
+}
+
+select option:checked {
+  background-color: #3b82f6 !important;
+  color: #ffffff !important;
+}
+
+/* Native Mobile Application Experience */
+@media (max-width: 899px) {
+  .desktop-only {
+    display: none !important;
+  }
+
+  .mobile-main-content {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom)) !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  .mobile-hide {
+    display: none !important;
+  }
+
+  /* Touch-friendly target sizes */
+  button, input, select {
+    touch-action: manipulation;
+  }
+}
+
+@media (min-width: 900px) {
+  .mobile-only {
+    display: none !important;
+  }
+}
+
+/* Smooth Animations */
+@keyframes slideUpDrawer {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.animate-slide-up {
+  animation: slideUpDrawer 0.26s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.26s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+

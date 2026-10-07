@@ -199,7 +199,7 @@ export default function Home() {
       />
 
       {/* Main Content Area */}
-      <main style={{ maxWidth: 1440, margin: "0 auto", padding: "28px 24px", width: "100%", flex: 1 }}>
+      <main className="mobile-main-content" style={{ maxWidth: 1440, margin: "0 auto", padding: "28px 24px", width: "100%", flex: 1 }}>
         {currentTab === "dashboard" && (
           <DashboardView
             data={dashboardData}
@@ -275,7 +275,7 @@ export default function Home() {
       </main>
 
       {/* Footer */}
-      <footer style={{
+      <footer className="desktop-only" style={{
         borderTop: "1px solid var(--border-subtle)",
         padding: "16px 24px",
         textAlign: "center",
@@ -386,15 +386,16 @@ export default function Home() {
                   value={modalOrgCurrency}
                   onChange={(e) => setModalOrgCurrency(e.target.value)}
                   className="input-field"
+                  style={{ colorScheme: "dark" }}
                 >
-                  <option value="USD">USD ($)</option>
-                  <option value="EUR">EUR (€)</option>
-                  <option value="GBP">GBP (£)</option>
-                  <option value="CAD">CAD (C$)</option>
-                  <option value="AUD">AUD (A$)</option>
-                  <option value="INR">INR (₹)</option>
-                  <option value="SGD">SGD (S$)</option>
-                  <option value="JPY">JPY (¥)</option>
+                  <option value="USD" style={{ background: "#0f172a", color: "#ffffff" }}>USD ($)</option>
+                  <option value="EUR" style={{ background: "#0f172a", color: "#ffffff" }}>EUR (€)</option>
+                  <option value="GBP" style={{ background: "#0f172a", color: "#ffffff" }}>GBP (£)</option>
+                  <option value="CAD" style={{ background: "#0f172a", color: "#ffffff" }}>CAD (C$)</option>
+                  <option value="AUD" style={{ background: "#0f172a", color: "#ffffff" }}>AUD (A$)</option>
+                  <option value="INR" style={{ background: "#0f172a", color: "#ffffff" }}>INR (₹)</option>
+                  <option value="SGD" style={{ background: "#0f172a", color: "#ffffff" }}>SGD (S$)</option>
+                  <option value="JPY" style={{ background: "#0f172a", color: "#ffffff" }}>JPY (¥)</option>
                 </select>
               </div>
 

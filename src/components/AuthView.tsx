@@ -1170,22 +1170,23 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
                 style={{
                   width: "100%",
                   padding: "12px 14px",
-                  background: "rgba(255, 255, 255, 0.04)",
+                  background: "#131b2e",
                   border: "1px solid var(--border-subtle)",
                   borderRadius: 10,
                   color: "#ffffff",
                   fontSize: "0.92rem",
-                  outline: "none"
+                  outline: "none",
+                  colorScheme: "dark"
                 }}
               >
-                <option value="USD">USD ($)</option>
-                <option value="EUR">EUR (€)</option>
-                <option value="GBP">GBP (£)</option>
-                <option value="CAD">CAD (C$)</option>
-                <option value="AUD">AUD (A$)</option>
-                <option value="INR">INR (₹)</option>
-                <option value="SGD">SGD (S$)</option>
-                <option value="JPY">JPY (¥)</option>
+                <option value="USD" style={{ background: "#0f172a", color: "#ffffff" }}>USD ($)</option>
+                <option value="EUR" style={{ background: "#0f172a", color: "#ffffff" }}>EUR (€)</option>
+                <option value="GBP" style={{ background: "#0f172a", color: "#ffffff" }}>GBP (£)</option>
+                <option value="CAD" style={{ background: "#0f172a", color: "#ffffff" }}>CAD (C$)</option>
+                <option value="AUD" style={{ background: "#0f172a", color: "#ffffff" }}>AUD (A$)</option>
+                <option value="INR" style={{ background: "#0f172a", color: "#ffffff" }}>INR (₹)</option>
+                <option value="SGD" style={{ background: "#0f172a", color: "#ffffff" }}>SGD (S$)</option>
+                <option value="JPY" style={{ background: "#0f172a", color: "#ffffff" }}>JPY (¥)</option>
               </select>
             </div>
 
