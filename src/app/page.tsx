@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
-import PinLogin from "@/components/PinLogin";
+import AuthView from "@/components/AuthView";
 import DashboardView from "@/components/DashboardView";
 import ExpensesView from "@/components/ExpensesView";
 import IncomesView from "@/components/IncomesView";
@@ -81,11 +81,6 @@ export default function Home() {
     }
   };
 
-  const handleSwitchUser = async (targetUserId: string) => {
-    // Log out current session and let user enter PIN for the other partner profile
-    await handleLogout();
-  };
-
   if (authLoading) {
     return (
       <div style={{
@@ -106,11 +101,10 @@ export default function Home() {
     );
   }
 
-  // If not logged in, render PIN Login screen
+  // If not logged in, render Email & Password Auth screen (with Signup, Resend Forgot Password)
   if (!currentUser) {
     return (
-      <PinLogin
-        partners={partners}
+      <AuthView
         orgName={orgName}
         onLoginSuccess={(user) => {
           setCurrentUser(user);
@@ -133,10 +127,8 @@ export default function Home() {
           setCurrentTab(tab);
         }}
         currentUser={currentUser}
-        partners={partners}
         orgName={orgName}
         onLogout={handleLogout}
-        onSwitchUser={handleSwitchUser}
       />
 
       {/* Main Content Area */}

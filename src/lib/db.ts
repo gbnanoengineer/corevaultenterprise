@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import path from "path";
 import fs from "fs";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
 
 const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
@@ -42,12 +43,25 @@ export function initDatabase() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
-      username TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE,
+      username TEXT UNIQUE,
       display_name TEXT NOT NULL,
-      pin_hash TEXT NOT NULL,
+      password_hash TEXT,
+      pin_hash TEXT,
       avatar_color TEXT NOT NULL DEFAULT '#6366f1',
-      role TEXT NOT NULL DEFAULT 'partner',
+      role TEXT NOT NULL DEFAULT 'user',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      token TEXT UNIQUE NOT NULL,
+      expires_at DATETIME NOT NULL,
+      used INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS folders (
@@ -162,23 +176,57 @@ export function initDatabase() {
     );
   `);
 
-  // Safe schema migration for expires_at
+  // Safe schema migrations
   try {
     db.exec("ALTER TABLE files ADD COLUMN expires_at DATETIME;");
   } catch {
     // column already exists
   }
 
-  // Use INSERT OR IGNORE to prevent any unique constraint conflicts during multi-process builds
+  try {
+    db.exec("ALTER TABLE users ADD COLUMN email TEXT;");
+  } catch {
+    // column already exists
+  }
+
+  try {
+    db.exec("ALTER TABLE users ADD COLUMN password_hash TEXT;");
+  } catch {
+    // column already exists
+  }
+
+  try {
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);");
+  } catch {
+    // index already exists
+  }
+
+  // Pre-hashed default password for initial seed users: 'password123'
+  const defaultPasswordHash = bcrypt.hashSync("password123", 10);
   const pinPartner1 = hashPin("123456");
   const pinPartner2 = hashPin("654321");
 
   const insertUser = db.prepare(`
-    INSERT OR IGNORE INTO users (id, username, display_name, pin_hash, avatar_color, role)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO users (id, email, username, display_name, password_hash, pin_hash, avatar_color, role)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  insertUser.run("user_1", "partner1", "Partner 1 (Gaurav)", pinPartner1, "#3b82f6", "founder");
-  insertUser.run("user_2", "partner2", "Partner 2 (Partner)", pinPartner2, "#10b981", "partner");
+  insertUser.run("user_1", "gaurav@acme.com", "gaurav", "Gaurav", defaultPasswordHash, pinPartner1, "#3b82f6", "founder");
+  insertUser.run("user_2", "partner@acme.com", "partner", "Partner", defaultPasswordHash, pinPartner2, "#10b981", "partner");
+
+  // Ensure any existing rows without email or password_hash get populated
+  db.prepare(`
+    UPDATE users 
+    SET email = COALESCE(email, 'gaurav@acme.com'), 
+        password_hash = COALESCE(password_hash, ?) 
+    WHERE id = 'user_1'
+  `).run(defaultPasswordHash);
+
+  db.prepare(`
+    UPDATE users 
+    SET email = COALESCE(email, 'partner@acme.com'), 
+        password_hash = COALESCE(password_hash, ?) 
+    WHERE id = 'user_2'
+  `).run(defaultPasswordHash);
 
   const insertSetting = db.prepare(`INSERT OR IGNORE INTO system_settings (key, value) VALUES (?, ?)`);
   insertSetting.run("org_name", "Acme Core Ventures");

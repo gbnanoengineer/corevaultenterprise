@@ -18,20 +18,16 @@ interface NavbarProps {
   currentTab: string;
   setCurrentTab: (tab: string) => void;
   currentUser: any;
-  partners: any[];
   orgName: string;
   onLogout: () => void;
-  onSwitchUser: (userId: string) => void;
 }
 
 export default function Navbar({
   currentTab,
   setCurrentTab,
   currentUser,
-  partners,
   orgName,
   onLogout,
-  onSwitchUser,
 }: NavbarProps) {
   const tabs = [
     { id: "dashboard", label: "Overview", icon: LayoutDashboard },
@@ -42,8 +38,6 @@ export default function Navbar({
     { id: "documents", label: "Document Vault", icon: FolderLock },
     { id: "settings", label: "Settings", icon: Settings },
   ];
-
-  const otherPartner = partners.find((p) => p.id !== currentUser?.id);
 
   return (
     <header style={{
@@ -135,59 +129,36 @@ export default function Navbar({
 
         {/* User Profile & Actions */}
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          {/* Quick switch to partner button */}
-          {otherPartner && (
-            <button
-              id="btn-switch-partner"
-              onClick={() => onSwitchUser(otherPartner.id)}
-              title={`Switch profile to ${otherPartner.display_name}`}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "6px 10px",
-                borderRadius: 6,
-                fontSize: "0.75rem",
-                color: "var(--text-secondary)",
-                background: "rgba(255, 255, 255, 0.04)",
-                border: "1px solid var(--border-subtle)"
-              }}
-            >
-              <RefreshCw size={12} />
-              <span>Switch: {otherPartner.display_name.split(" ")[0]}</span>
-            </button>
-          )}
-
           {/* Active User Chip */}
           <div style={{
             display: "flex",
             alignItems: "center",
             gap: 10,
-            padding: "5px 12px 5px 6px",
+            padding: "5px 14px 5px 6px",
             background: "rgba(255, 255, 255, 0.04)",
             border: "1px solid var(--border-subtle)",
             borderRadius: 30
           }}>
             <div style={{
-              width: 28,
-              height: 28,
+              width: 30,
+              height: 30,
               borderRadius: "50%",
               background: currentUser?.avatar_color || "#3b82f6",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              fontSize: "0.8rem",
+              fontSize: "0.82rem",
               fontWeight: 700,
               color: "#ffffff"
             }}>
-              {currentUser?.display_name?.charAt(0) || "P"}
+              {currentUser?.display_name?.charAt(0) || "U"}
             </div>
             <div style={{ display: "flex", flexDirection: "column" }}>
               <span style={{ fontSize: "0.82rem", fontWeight: 600, lineHeight: 1.2 }}>
-                {currentUser?.display_name || "Partner"}
+                {currentUser?.display_name || "User"}
               </span>
-              <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", textTransform: "capitalize" }}>
-                {currentUser?.role || "Partner"}
+              <span style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>
+                {currentUser?.email || currentUser?.role || "Active Account"}
               </span>
             </div>
           </div>

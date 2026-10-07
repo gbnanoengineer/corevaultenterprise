@@ -3,15 +3,17 @@
 import React, { useState, useEffect } from "react";
 import {
   Settings,
-  KeyRound,
   Building,
   Shield,
-  Copy,
   Check,
   Save,
-  Users,
   Database,
-  Lock
+  Lock,
+  Mail,
+  User,
+  KeyRound,
+  Send,
+  AlertCircle
 } from "lucide-react";
 
 interface SettingsViewProps {
@@ -23,16 +25,15 @@ export default function SettingsView({ currentUser, onRefreshAuth }: SettingsVie
   const [loading, setLoading] = useState(true);
   const [orgName, setOrgName] = useState("");
   const [defaultCurrency, setDefaultCurrency] = useState("USD");
-  const [masterRecoveryKey, setMasterRecoveryKey] = useState("");
-  const [partners, setPartners] = useState<any[]>([]);
-
-  // Change PIN form
-  const [currentPin, setCurrentPin] = useState("");
-  const [newPin, setNewPin] = useState("");
-  const [pinMessage, setPinMessage] = useState("");
-
-  const [copiedKey, setCopiedKey] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Change Password form
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordError, setPasswordError] = useState("");
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -42,8 +43,6 @@ export default function SettingsView({ currentUser, onRefreshAuth }: SettingsVie
         const data = await res.json();
         setOrgName(data.orgName || "");
         setDefaultCurrency(data.defaultCurrency || "USD");
-        setMasterRecoveryKey(data.masterRecoveryKey || "");
-        setPartners(data.partners || []);
       } catch (err) {
         console.error("Fetch settings error:", err);
       } finally {
@@ -62,7 +61,6 @@ export default function SettingsView({ currentUser, onRefreshAuth }: SettingsVie
         body: JSON.stringify({
           orgName,
           defaultCurrency,
-          partners,
         }),
       });
       setSaveSuccess(true);
@@ -73,41 +71,52 @@ export default function SettingsView({ currentUser, onRefreshAuth }: SettingsVie
     }
   };
 
-  const handleChangePin = async (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentPin || !newPin || newPin.length < 4) {
-      setPinMessage("Please provide your current PIN and a new 4-6 digit PIN.");
+    setPasswordMessage("");
+    setPasswordError("");
+
+    if (!currentPassword || !newPassword) {
+      setPasswordError("Please enter your current password and a new password.");
       return;
     }
 
+    if (newPassword.length < 6) {
+      setPasswordError("New password must be at least 6 characters long.");
+      return;
+    }
+
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError("New passwords do not match.");
+      return;
+    }
+
+    setPasswordLoading(true);
     try {
-      const res = await fetch("/api/auth", {
-        method: "PATCH",
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: currentUser.id,
-          currentPin,
-          newPin,
+          currentPassword,
+          newPassword,
         }),
       });
+
       const data = await res.json();
       if (!res.ok) {
-        setPinMessage(data.error || "Failed to update PIN");
+        setPasswordError(data.error || "Failed to update password.");
       } else {
-        setPinMessage("Your PIN was successfully updated!");
-        setCurrentPin("");
-        setNewPin("");
-        setTimeout(() => setPinMessage(""), 3000);
+        setPasswordMessage("Your password was updated successfully!");
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmNewPassword("");
+        setTimeout(() => setPasswordMessage(""), 3500);
       }
     } catch {
-      setPinMessage("Network error updating PIN");
+      setPasswordError("Network error while updating password.");
+    } finally {
+      setPasswordLoading(false);
     }
-  };
-
-  const handleCopyRecoveryKey = () => {
-    navigator.clipboard.writeText(masterRecoveryKey);
-    setCopiedKey(true);
-    setTimeout(() => setCopiedKey(false), 2000);
   };
 
   if (loading) {
@@ -123,14 +132,61 @@ export default function SettingsView({ currentUser, onRefreshAuth }: SettingsVie
       {/* Header */}
       <div>
         <h1 style={{ fontSize: "1.6rem", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.01em" }}>
-          Settings & Partner Access
+          Settings & Account Security
         </h1>
         <p style={{ fontSize: "0.86rem", color: "var(--text-secondary)" }}>
-          Manage your organization name, currencies, PIN security, and partner profiles.
+          Manage your organization name, default currency, authentication credentials, and cloud storage engine.
         </p>
       </div>
 
-      {/* General Settings Form */}
+      {/* Account Profile Card */}
+      <div className="glass-card" style={{ padding: 26, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid var(--border-subtle)", paddingBottom: 14 }}>
+          <User size={20} color="#818cf8" />
+          <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#ffffff" }}>My Account Profile</h2>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 16, background: "rgba(255, 255, 255, 0.03)", padding: 16, borderRadius: 12, border: "1px solid var(--border-subtle)" }}>
+          <div style={{
+            width: 48,
+            height: 48,
+            borderRadius: "50%",
+            background: currentUser?.avatar_color || "#3b82f6",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: "1.2rem",
+            fontWeight: 800,
+            color: "#ffffff"
+          }}>
+            {currentUser?.display_name?.charAt(0) || "U"}
+          </div>
+
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: "1.05rem", fontWeight: 700, color: "#ffffff" }}>
+                {currentUser?.display_name || "User"}
+              </span>
+              <span style={{
+                background: "rgba(99, 102, 241, 0.15)",
+                color: "#818cf8",
+                fontSize: "0.72rem",
+                fontWeight: 700,
+                padding: "2px 8px",
+                borderRadius: 4,
+                textTransform: "uppercase"
+              }}>
+                {currentUser?.role || "Member"}
+              </span>
+            </div>
+            <div style={{ fontSize: "0.84rem", color: "var(--text-secondary)", marginTop: 2 }}>
+              {currentUser?.email || "No email assigned"}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* General Organization Settings */}
       <form onSubmit={handleSaveGeneral} className="glass-card" style={{ padding: 26, display: "flex", flexDirection: "column", gap: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid var(--border-subtle)", paddingBottom: 14 }}>
           <Building size={20} color="#818cf8" />
@@ -148,6 +204,7 @@ export default function SettingsView({ currentUser, onRefreshAuth }: SettingsVie
               value={orgName}
               onChange={(e) => setOrgName(e.target.value)}
               className="input-field"
+              placeholder="e.g. Acme Core Ventures"
               required
             />
           </div>
@@ -163,107 +220,21 @@ export default function SettingsView({ currentUser, onRefreshAuth }: SettingsVie
               className="input-field"
             >
               <option value="USD">USD ($)</option>
-              <option value="INR">INR (₹)</option>
               <option value="EUR">EUR (€)</option>
               <option value="GBP">GBP (£)</option>
-              <option value="CAD">CAD ($)</option>
-              <option value="AUD">AUD ($)</option>
+              <option value="CAD">CAD (C$)</option>
+              <option value="AUD">AUD (A$)</option>
+              <option value="INR">INR (₹)</option>
+              <option value="SGD">SGD (S$)</option>
+              <option value="JPY">JPY (¥)</option>
             </select>
-          </div>
-        </div>
-
-        {/* Partner Profiles */}
-        <div>
-          <label style={{ fontSize: "0.85rem", fontWeight: 600, color: "#ffffff", display: "block", marginBottom: 10 }}>
-            Partner Profiles
-          </label>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-            {partners.map((p, idx) => (
-              <div key={p.id} style={{
-                background: "rgba(255, 255, 255, 0.03)",
-                border: "1px solid var(--border-subtle)",
-                borderRadius: 12,
-                padding: 16,
-                display: "flex",
-                flexDirection: "column",
-                gap: 10
-              }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: "50%",
-                    background: p.avatar_color,
-                    color: "#ffffff",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: 700,
-                    fontSize: "0.85rem"
-                  }}>
-                    {p.display_name.charAt(0)}
-                  </div>
-                  <div>
-                    <span style={{ fontSize: "0.86rem", fontWeight: 600, color: "#ffffff" }}>
-                      Partner {idx + 1}
-                    </span>
-                    <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", display: "block" }}>
-                      ID: {p.id}
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: "0.74rem", color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
-                    Display Name
-                  </label>
-                  <input
-                    type="text"
-                    value={p.display_name}
-                    onChange={(e) => {
-                      const updated = [...partners];
-                      updated[idx].display_name = e.target.value;
-                      setPartners(updated);
-                    }}
-                    className="input-field"
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: "0.74rem", color: "var(--text-muted)", display: "block", marginBottom: 4 }}>
-                    Avatar Color
-                  </label>
-                  <div style={{ display: "flex", gap: 8 }}>
-                    {["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#ec4899"].map((col) => (
-                      <button
-                        key={col}
-                        type="button"
-                        onClick={() => {
-                          const updated = [...partners];
-                          updated[idx].avatar_color = col;
-                          setPartners(updated);
-                        }}
-                        style={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: "50%",
-                          background: col,
-                          border: p.avatar_color === col ? "2px solid #ffffff" : "none",
-                          cursor: "pointer"
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ))}
           </div>
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12 }}>
           {saveSuccess && (
             <span style={{ color: "#34d399", fontSize: "0.85rem", display: "flex", alignItems: "center", gap: 6 }}>
-              <Check size={16} /> Settings saved successfully!
+              <Check size={16} /> Organization settings saved!
             </span>
           )}
           <button id="btn-save-settings" type="submit" className="btn-primary" style={{ padding: "9px 20px" }}>
@@ -273,105 +244,139 @@ export default function SettingsView({ currentUser, onRefreshAuth }: SettingsVie
         </div>
       </form>
 
-      {/* Change PIN Card */}
-      <form onSubmit={handleChangePin} className="glass-card" style={{ padding: 26, display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Change Password Card */}
+      <form onSubmit={handleChangePassword} className="glass-card" style={{ padding: 26, display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid var(--border-subtle)", paddingBottom: 14 }}>
           <Lock size={20} color="#fbbf24" />
           <div>
-            <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#ffffff" }}>Change Your PIN</h2>
+            <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#ffffff" }}>Change Account Password</h2>
             <span style={{ fontSize: "0.76rem", color: "var(--text-muted)" }}>
-              Updating PIN for {currentUser?.display_name}
+              Ensure your account is protected with a strong, unique password
             </span>
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
           <div>
             <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
-              Current PIN
+              Current Password
             </label>
             <input
-              id="input-current-pin"
+              id="input-current-password"
               type="password"
-              maxLength={6}
-              value={currentPin}
-              onChange={(e) => setCurrentPin(e.target.value)}
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
               className="input-field"
-              placeholder="••••••"
+              placeholder="••••••••"
               required
             />
           </div>
 
           <div>
             <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
-              New 6-Digit PIN
+              New Password (min 6 chars)
             </label>
             <input
-              id="input-update-pin"
+              id="input-new-password"
               type="password"
-              maxLength={6}
-              value={newPin}
-              onChange={(e) => setNewPin(e.target.value)}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
               className="input-field"
-              placeholder="••••••"
+              placeholder="••••••••"
+              required
+            />
+          </div>
+
+          <div>
+            <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
+              Confirm New Password
+            </label>
+            <input
+              id="input-confirm-new-password"
+              type="password"
+              value={confirmNewPassword}
+              onChange={(e) => setConfirmNewPassword(e.target.value)}
+              className="input-field"
+              placeholder="••••••••"
               required
             />
           </div>
         </div>
 
-        {pinMessage && (
+        {passwordError && (
           <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
             fontSize: "0.82rem",
-            color: pinMessage.includes("success") ? "#34d399" : "#fb7185",
-            background: pinMessage.includes("success") ? "rgba(16, 185, 129, 0.1)" : "rgba(244, 63, 94, 0.1)",
+            color: "#fb7185",
+            background: "rgba(244, 63, 94, 0.1)",
             padding: "8px 12px",
             borderRadius: 8
           }}>
-            {pinMessage}
+            <AlertCircle size={15} />
+            <span>{passwordError}</span>
+          </div>
+        )}
+
+        {passwordMessage && (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            fontSize: "0.82rem",
+            color: "#34d399",
+            background: "rgba(16, 185, 129, 0.1)",
+            padding: "8px 12px",
+            borderRadius: 8
+          }}>
+            <Check size={15} />
+            <span>{passwordMessage}</span>
           </div>
         )}
 
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <button id="btn-update-pin" type="submit" className="btn-secondary" style={{ padding: "9px 18px" }}>
-            Update PIN
+          <button
+            id="btn-update-password"
+            type="submit"
+            disabled={passwordLoading}
+            className="btn-secondary"
+            style={{ padding: "9px 18px" }}
+          >
+            {passwordLoading ? "Updating..." : "Update Password"}
           </button>
         </div>
       </form>
 
-      {/* Master Recovery Key Card */}
+      {/* Resend Email Configuration Card */}
       <div className="glass-card" style={{ padding: 26, display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Shield size={20} color="#38bdf8" />
-          <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#ffffff" }}>
-            Emergency Master Recovery Key
-          </h2>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid var(--border-subtle)", paddingBottom: 14 }}>
+          <Mail size={20} color="#38bdf8" />
+          <div>
+            <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#ffffff" }}>
+              Resend Transactional Email Engine
+            </h2>
+            <span style={{ fontSize: "0.76rem", color: "var(--text-muted)" }}>
+              Powers password recovery, verification emails, and vault activity notifications
+            </span>
+          </div>
         </div>
 
-        <p style={{ fontSize: "0.84rem", color: "var(--text-secondary)" }}>
-          Store this key in your password manager. In the event that either partner forgets their 6-digit PIN, this master key allows an instant PIN reset from the lock screen.
-        </p>
-
         <div style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          background: "#080b12",
-          border: "1px solid var(--border-medium)",
-          borderRadius: 10,
-          padding: "10px 16px",
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 14,
         }}>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.95rem", color: "#38bdf8", fontWeight: 600 }}>
-            {masterRecoveryKey}
-          </span>
-          <button
-            id="btn-copy-recovery-key"
-            onClick={handleCopyRecoveryKey}
-            className="btn-secondary"
-            style={{ fontSize: "0.78rem", padding: "6px 12px" }}
-          >
-            {copiedKey ? <Check size={14} color="#34d399" /> : <Copy size={14} />}
-            <span>{copiedKey ? "Copied" : "Copy Key"}</span>
-          </button>
+          <div style={{ background: "rgba(255, 255, 255, 0.03)", padding: 14, borderRadius: 10, border: "1px solid var(--border-subtle)" }}>
+            <span style={{ fontSize: "0.74rem", color: "var(--text-muted)", display: "block" }}>Provider</span>
+            <span style={{ fontSize: "0.88rem", fontWeight: 600, color: "#ffffff" }}>Resend.com API</span>
+          </div>
+          <div style={{ background: "rgba(255, 255, 255, 0.03)", padding: 14, borderRadius: 10, border: "1px solid var(--border-subtle)" }}>
+            <span style={{ fontSize: "0.74rem", color: "var(--text-muted)", display: "block" }}>Sender Address</span>
+            <span style={{ fontSize: "0.88rem", fontWeight: 600, color: "#38bdf8" }}>
+              no-reply@jioratech.com
+            </span>
+          </div>
         </div>
       </div>
 
@@ -395,11 +400,11 @@ export default function SettingsView({ currentUser, onRefreshAuth }: SettingsVie
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
               <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#ffffff" }}>S3-Compatible Bucket</span>
               <span className="badge badge-emerald" style={{ fontSize: "0.68rem" }}>
-                Cloudflare R2 / MinIO / S3
+                Connected
               </span>
             </div>
             <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
-              Connect any small or free S3-compatible bucket (e.g. <strong>Cloudflare R2 with 10 GB free</strong>, self-hosted MinIO, or AWS S3). Without S3 keys, assets are stored in the local Docker volume mount (<code style={{ color: "#38bdf8" }}>./data/uploads</code>).
+              Active storage bucket: <code style={{ color: "#38bdf8" }}>expanse</code>. Assets uploaded to the Document Vault are mirrored directly to the S3 bucket.
             </p>
           </div>
 
@@ -415,7 +420,7 @@ export default function SettingsView({ currentUser, onRefreshAuth }: SettingsVie
               <span className="badge badge-amber" style={{ fontSize: "0.68rem" }}>Active</span>
             </div>
             <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
-              Upload files with a custom or preset retention period (24 hours, 7 days, 30 days, 90 days). Expired files are automatically purged from both the S3 bucket and disk storage.
+              Upload files with custom retention periods (24 hours, 7 days, 30 days, 90 days). Expired files are automatically purged from both the S3 bucket and disk storage.
             </p>
           </div>
         </div>
@@ -439,27 +444,6 @@ export default function SettingsView({ currentUser, onRefreshAuth }: SettingsVie
               When a document, receipt, or folder is deleted, the system automatically purges the corresponding physical files and subfolders from both the S3 cloud storage bucket and host disk to prevent orphaned files or runaway bucket costs.
             </p>
           </div>
-        </div>
-
-        {/* S3 Environment Setup Guide */}
-        <div style={{
-          background: "rgba(0, 0, 0, 0.35)",
-          border: "1px solid var(--border-subtle)",
-          borderRadius: 10,
-          padding: "14px 16px",
-          fontSize: "0.78rem",
-          color: "var(--text-secondary)"
-        }}>
-          <div style={{ fontWeight: 600, color: "#e2e8f0", marginBottom: 4 }}>
-            S3-Compatible Bucket Configuration (docker-compose.yml or .env):
-          </div>
-          <code style={{ display: "block", fontFamily: "var(--font-mono)", color: "#a5b4fc", whiteSpace: "pre", marginTop: 4 }}>
-            S3_ENDPOINT=https://&lt;account_id&gt;.r2.cloudflarestorage.com  # Or http://minio:9000 for MinIO{"\n"}
-            S3_ACCESS_KEY_ID=your-s3-access-key-id{"\n"}
-            S3_SECRET_ACCESS_KEY=your-s3-secret-access-key{"\n"}
-            S3_BUCKET_NAME=expense-vault-assets{"\n"}
-            S3_REGION=auto
-          </code>
         </div>
       </div>
     </div>
