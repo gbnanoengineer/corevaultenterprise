@@ -28,11 +28,15 @@ services:
       - S3_REGION=${S3_REGION:-us-east-1}
       - S3_FORCE_PATH_STYLE=true
     volumes:
-      # Persistent local storage volume for SQLite database and uploaded documents
-      - ./data:/app/data
+      # Named persistent volume: Survives all Dokploy redeployments and git pulls
+      - corevault_data:/app/data
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/api/auth', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));\""]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
+
+volumes:
+  corevault_data:
+    driver: local

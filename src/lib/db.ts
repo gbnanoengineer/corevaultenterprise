@@ -314,29 +314,6 @@ export function initDatabase() {
     // index already exists
   }
 
-  // Ensure default organization exists
-  const insertOrg = db.prepare(`
-    INSERT OR IGNORE INTO organizations (id, name, currency, created_by_user_id)
-    VALUES (?, ?, ?, ?)
-  `);
-  insertOrg.run("org_default", "Acme Core Ventures", "USD", "user_1");
-
-  const insertMember = db.prepare(`
-    INSERT OR IGNORE INTO organization_members (id, organization_id, user_id, role)
-    VALUES (?, ?, ?, ?)
-  `);
-  insertMember.run("mem_1", "org_default", "user_1", "owner");
-  insertMember.run("mem_2", "org_default", "user_2", "member");
-
-  // Backfill existing legacy records without an organization to the default organization
-  db.prepare("UPDATE expenses SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
-  db.prepare("UPDATE incomes SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
-  db.prepare("UPDATE subscriptions SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
-  db.prepare("UPDATE settlements SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
-  db.prepare("UPDATE folders SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
-  db.prepare("UPDATE files SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
-  db.prepare("UPDATE shared_links SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
-
   // Pre-hashed default password for initial seed users: 'password123'
   const defaultPasswordHash = bcrypt.hashSync("password123", 10);
   const pinPartner1 = hashPin("123456");
@@ -363,6 +340,29 @@ export function initDatabase() {
         password_hash = COALESCE(password_hash, ?) 
     WHERE id = 'user_2'
   `).run(defaultPasswordHash);
+
+  // Ensure default organization exists (references user_1)
+  const insertOrg = db.prepare(`
+    INSERT OR IGNORE INTO organizations (id, name, currency, created_by_user_id)
+    VALUES (?, ?, ?, ?)
+  `);
+  insertOrg.run("org_default", "Acme Core Ventures", "USD", "user_1");
+
+  const insertMember = db.prepare(`
+    INSERT OR IGNORE INTO organization_members (id, organization_id, user_id, role)
+    VALUES (?, ?, ?, ?)
+  `);
+  insertMember.run("mem_1", "org_default", "user_1", "owner");
+  insertMember.run("mem_2", "org_default", "user_2", "member");
+
+  // Backfill existing legacy records without an organization to the default organization
+  db.prepare("UPDATE expenses SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
+  db.prepare("UPDATE incomes SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
+  db.prepare("UPDATE subscriptions SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
+  db.prepare("UPDATE settlements SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
+  db.prepare("UPDATE folders SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
+  db.prepare("UPDATE files SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
+  db.prepare("UPDATE shared_links SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
 
   const insertSetting = db.prepare(`INSERT OR IGNORE INTO system_settings (key, value) VALUES (?, ?)`);
   insertSetting.run("org_name", "Acme Core Ventures");
