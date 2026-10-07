@@ -12,8 +12,11 @@ import {
   PauseCircle,
   Trash2,
   Edit2,
-  X
+  X,
+  Sparkles
 } from "lucide-react";
+import ConfirmModal from "./ConfirmModal";
+import { BrandIcon, AI_SUBSCRIPTION_PRESETS } from "./AiBrandIcons";
 
 interface SubscriptionsViewProps {
   currency: string;
@@ -139,10 +142,17 @@ export default function SubscriptionsView({
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this subscription?")) return;
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  const handleDelete = (id: string) => {
+    setDeleteConfirmId(id);
+  };
+
+  const executeDelete = async () => {
+    if (!deleteConfirmId) return;
     try {
-      await fetch(`/api/subscriptions/${id}`, { method: "DELETE" });
+      await fetch(`/api/subscriptions/${deleteConfirmId}`, { method: "DELETE" });
+      setDeleteConfirmId(null);
       fetchSubscriptions();
     } catch (err) {
       console.error("Delete subscription error:", err);
@@ -233,18 +243,21 @@ export default function SubscriptionsView({
             >
               <div>
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 12 }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <h3 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#ffffff" }}>{sub.name}</h3>
-                      {sub.url && (
-                        <a href={sub.url} target="_blank" rel="noreferrer" style={{ color: "var(--text-muted)" }}>
-                          <ExternalLink size={14} />
-                        </a>
-                      )}
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <BrandIcon name={sub.name} size={34} />
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <h3 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#ffffff" }}>{sub.name}</h3>
+                        {sub.url && (
+                          <a href={sub.url} target="_blank" rel="noreferrer" style={{ color: "var(--text-muted)" }}>
+                            <ExternalLink size={14} />
+                          </a>
+                        )}
+                      </div>
+                      <span className="badge badge-indigo" style={{ fontSize: "0.68rem", marginTop: 4 }}>
+                        {sub.category}
+                      </span>
                     </div>
-                    <span className="badge badge-indigo" style={{ fontSize: "0.68rem", marginTop: 4 }}>
-                      {sub.category}
-                    </span>
                   </div>
 
                   <div style={{ textAlign: "right" }}>
@@ -354,6 +367,50 @@ export default function SubscriptionsView({
             </div>
 
             <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              {/* Quick AI Presets */}
+              {!editingSub && (
+                <div style={{ background: "rgba(255, 255, 255, 0.02)", padding: 12, borderRadius: 10, border: "1px solid var(--border-subtle)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.74rem", color: "#38bdf8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 8 }}>
+                    <Sparkles size={13} />
+                    <span>Popular AI Subscriptions (1-Click Auto-Fill)</span>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {AI_SUBSCRIPTION_PRESETS.map((preset) => (
+                      <button
+                        key={preset.name}
+                        type="button"
+                        onClick={() => {
+                          setFormData({
+                            ...formData,
+                            name: preset.name,
+                            category: preset.category,
+                            cost: preset.cost,
+                            billing_cycle: preset.billing_cycle,
+                            url: preset.url,
+                          });
+                        }}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "5px 10px",
+                          borderRadius: 8,
+                          background: "rgba(255, 255, 255, 0.05)",
+                          border: "1px solid var(--border-subtle)",
+                          color: "#ffffff",
+                          fontSize: "0.75rem",
+                          fontWeight: 500,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <BrandIcon name={preset.name} size={14} />
+                        <span>{preset.name.split(" ")[0]}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
                   Tool / Service Name *
@@ -473,6 +530,18 @@ export default function SubscriptionsView({
           </div>
         </div>
       )}
+
+      {/* Custom Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deleteConfirmId}
+        title="Delete SaaS Subscription"
+        message="Are you sure you want to delete this subscription? This will update your monthly recurring burn rate calculation."
+        confirmText="Delete Subscription"
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={executeDelete}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
     </div>
   );
 }

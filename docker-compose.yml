@@ -11,6 +11,7 @@ services:
       - NODE_ENV=production
       - DATA_DIR=/app/data
       - DATABASE_PATH=/app/data/corevault.db
+      - DATABASE_URL=${DATABASE_URL:-postgresql://postgres:B5yuK4BctpYsfcF8C1kS@jiora-tools-corevault-enterprise-rfb0k4:5432/postgres}
       - PORT=3000
       # Resend Email Configuration (OTP & Team Invitations)
       - RESEND_API_KEY=${RESEND_API_KEY:-}
@@ -30,6 +31,9 @@ services:
     volumes:
       # Named persistent volume: Survives all Dokploy redeployments and git pulls
       - corevault_data:/app/data
+    networks:
+      - default
+      - dokploy-network
     healthcheck:
       test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/api/auth', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1));\""]
       interval: 30s
@@ -40,3 +44,7 @@ services:
 volumes:
   corevault_data:
     driver: local
+
+networks:
+  dokploy-network:
+    external: true

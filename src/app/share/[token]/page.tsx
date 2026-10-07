@@ -13,8 +13,11 @@ import {
   Image as ImageIcon,
   CheckCircle2,
   AlertCircle,
-  ExternalLink
+  ExternalLink,
+  Lock,
+  KeyRound
 } from "lucide-react";
+import MarkdownViewer from "@/components/MarkdownViewer";
 
 export default function PublicSharePage() {
   const params = useParams();
@@ -25,30 +28,58 @@ export default function PublicSharePage() {
   const [error, setError] = useState("");
   const [activeSheet, setActiveSheet] = useState<string>("");
 
-  useEffect(() => {
-    if (!token) return;
-    const fetchShared = async () => {
-      try {
-        setLoading(true);
-        setError("");
-        const res = await fetch(`/api/share/${token}`);
-        const result = await res.json();
-        if (!res.ok) {
-          setError(result.error || "Shared resource not found or link has expired.");
+  const [enteredPin, setEnteredPin] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [submittingPin, setSubmittingPin] = useState(false);
+  const [verifiedPin, setVerifiedPin] = useState("");
+
+  const fetchShared = async (pin?: string) => {
+    try {
+      if (!pin) setLoading(true);
+      setError("");
+      setPinError("");
+      const url = pin
+        ? `/api/share/${token}?pin=${encodeURIComponent(pin)}`
+        : `/api/share/${token}`;
+      const res = await fetch(url);
+      const result = await res.json();
+      if (!res.ok) {
+        setError(result.error || "Shared resource not found or link has expired.");
+      } else {
+        setData(result);
+        if (result.isPinRequired) {
+          if (result.pinError) {
+            setPinError(result.pinError);
+          }
         } else {
-          setData(result);
+          if (pin) setVerifiedPin(pin);
           if (result.previewData?.type === "excel" && result.previewData.sheetNames?.length > 0) {
             setActiveSheet(result.previewData.sheetNames[0]);
           }
         }
-      } catch (err) {
-        setError("Network error while accessing shared resource.");
-      } finally {
-        setLoading(false);
       }
-    };
+    } catch (err) {
+      setError("Network error while accessing shared resource.");
+    } finally {
+      setLoading(false);
+      setSubmittingPin(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!token) return;
     fetchShared();
   }, [token]);
+
+  const handleUnlockPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!enteredPin.trim()) {
+      setPinError("Please enter your access PIN.");
+      return;
+    }
+    setSubmittingPin(true);
+    await fetchShared(enteredPin.trim());
+  };
 
   if (loading) {
     return (
@@ -93,6 +124,87 @@ export default function PublicSharePage() {
     );
   }
 
+  if (data?.isPinRequired) {
+    return (
+      <div style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#090d16",
+        padding: 24,
+      }}>
+        <div className="glass-card animate-fade-in" style={{ maxWidth: 440, width: "100%", padding: 32, textAlign: "center" }}>
+          <div style={{
+            width: 52,
+            height: 52,
+            borderRadius: 14,
+            background: "rgba(99, 102, 241, 0.15)",
+            border: "1px solid rgba(99, 102, 241, 0.3)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            margin: "0 auto 16px",
+            color: "#818cf8"
+          }}>
+            <Lock size={26} />
+          </div>
+
+          <h2 style={{ fontSize: "1.3rem", fontWeight: 700, color: "#ffffff", marginBottom: 6 }}>
+            PIN Protected Resource
+          </h2>
+          <p style={{ fontSize: "0.86rem", color: "var(--text-secondary)", marginBottom: 24, lineHeight: 1.5 }}>
+            This workspace asset is restricted. Please enter the security PIN provided by <strong>{data.link?.creatorName || "the sender"}</strong> to unlock and preview.
+          </p>
+
+          <form onSubmit={handleUnlockPin} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ position: "relative" }}>
+              <input
+                id="input-share-pin"
+                type="password"
+                maxLength={8}
+                placeholder="Enter 4–8 digit PIN"
+                value={enteredPin}
+                onChange={(e) => setEnteredPin(e.target.value)}
+                autoFocus
+                style={{
+                  width: "100%",
+                  padding: "12px 16px",
+                  borderRadius: 10,
+                  background: "#080b12",
+                  border: pinError ? "1px solid #f43f5e" : "1px solid var(--border-medium)",
+                  color: "#ffffff",
+                  fontSize: "1.1rem",
+                  textAlign: "center",
+                  letterSpacing: "4px",
+                  outline: "none",
+                }}
+              />
+            </div>
+
+            {pinError && (
+              <div style={{ fontSize: "0.82rem", color: "#fb7185", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                <AlertCircle size={14} />
+                <span>{pinError}</span>
+              </div>
+            )}
+
+            <button
+              id="btn-submit-share-pin"
+              type="submit"
+              disabled={submittingPin || !enteredPin.trim()}
+              className="btn-primary"
+              style={{ width: "100%", padding: "12px", fontSize: "0.92rem", justifyContent: "center" }}
+            >
+              <KeyRound size={16} />
+              <span>{submittingPin ? "Verifying PIN..." : "Unlock & View Asset"}</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   const { link, folderFiles, previewData, downloadUrl } = data;
 
   return (
@@ -131,7 +243,7 @@ export default function PublicSharePage() {
           {link.isFile && downloadUrl && (
             <a
               id="btn-client-download-file"
-              href={downloadUrl}
+              href={`${downloadUrl}${verifiedPin ? (downloadUrl.includes("?") ? `&pin=${encodeURIComponent(verifiedPin)}` : `?pin=${encodeURIComponent(verifiedPin)}`) : ""}`}
               download
               className="btn-primary"
               style={{ padding: "9px 18px", fontSize: "0.88rem" }}
@@ -245,20 +357,26 @@ export default function PublicSharePage() {
                 />
               </div>
             ) : previewData?.type === "code" ? (
-              <div style={{
-                background: "#080b12",
-                border: "1px solid var(--border-subtle)",
-                borderRadius: 10,
-                padding: "20px 24px",
-                fontFamily: "var(--font-mono)",
-                fontSize: "0.86rem",
-                color: "#e2e8f0",
-                lineHeight: 1.6,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word"
-              }}>
-                {previewData.content}
-              </div>
+              previewData.ext === ".md" ? (
+                <div style={{ background: "#0b0f19", border: "1px solid var(--border-subtle)", borderRadius: 12, padding: "20px 24px" }}>
+                  <MarkdownViewer content={previewData.content} />
+                </div>
+              ) : (
+                <div style={{
+                  background: "#080b12",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: 10,
+                  padding: "20px 24px",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "0.86rem",
+                  color: "#e2e8f0",
+                  lineHeight: 1.6,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word"
+                }}>
+                  {previewData.content}
+                </div>
+              )
             ) : previewData?.type === "pdf" ? (
               <div style={{ height: "75vh", borderRadius: 10, overflow: "hidden", border: "1px solid var(--border-subtle)" }}>
                 <iframe src={previewData.url} title={link.fileName} style={{ width: "100%", height: "100%", border: "none" }} />
@@ -276,7 +394,12 @@ export default function PublicSharePage() {
                 <p style={{ fontSize: "0.88rem", color: "var(--text-secondary)", marginBottom: 20 }}>
                   This document is packaged for local review on your computer.
                 </p>
-                <a href={downloadUrl} download className="btn-primary" style={{ padding: "10px 24px" }}>
+                <a
+                  href={`${downloadUrl}${verifiedPin ? (downloadUrl.includes("?") ? `&pin=${encodeURIComponent(verifiedPin)}` : `?pin=${encodeURIComponent(verifiedPin)}`) : ""}`}
+                  download
+                  className="btn-primary"
+                  style={{ padding: "10px 24px" }}
+                >
                   <Download size={16} />
                   <span>Download {link.fileName}</span>
                 </a>
@@ -323,7 +446,7 @@ export default function PublicSharePage() {
                         </td>
                         <td style={{ padding: "14px 18px", textAlign: "right" }}>
                           <a
-                            href={`/api/share/${token}/file/${file.id}?download=1`}
+                            href={`/api/share/${token}/file/${file.id}?download=1${verifiedPin ? `&pin=${encodeURIComponent(verifiedPin)}` : ""}`}
                             download
                             className="btn-secondary"
                             style={{ padding: "6px 12px", fontSize: "0.78rem" }}

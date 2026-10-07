@@ -141,7 +141,7 @@ export async function generateAndSendOtp(
   };
 }
 
-// Verify OTP
+// Verify OTP with brute force attempt tracking
 export function verifyOtp(
   email: string,
   otp: string,
@@ -155,26 +155,44 @@ export function verifyOtp(
     return { valid: false, error: "Please enter the 6-digit verification code." };
   }
 
+  // Find most recent OTP issued for this email & purpose
   const record = db
     .prepare(`
-      SELECT id, expires_at, used 
+      SELECT id, otp, expires_at, used, failed_attempts 
       FROM email_otps 
-      WHERE LOWER(email) = ? AND otp = ? AND purpose = ? 
+      WHERE LOWER(email) = ? AND purpose = ? 
       ORDER BY created_at DESC 
       LIMIT 1
     `)
-    .get(cleanEmail, cleanOtp, purpose) as { id: string; expires_at: string; used: number } | undefined;
+    .get(cleanEmail, purpose) as { id: string; otp: string; expires_at: string; used: number; failed_attempts: number } | undefined;
 
   if (!record) {
-    return { valid: false, error: "Incorrect verification code. Please check your email and try again." };
+    return { valid: false, error: "No verification code was requested for this email. Please request a new code." };
   }
 
   if (record.used === 1) {
-    return { valid: false, error: "This verification code has already been used. Please request a new code." };
+    return { valid: false, error: "This verification code has already been used or expired. Please request a new code." };
   }
 
   if (Date.now() > new Date(record.expires_at).getTime()) {
     return { valid: false, error: "Verification code has expired (valid for 10 minutes). Please request a new code." };
+  }
+
+  const currentAttempts = record.failed_attempts || 0;
+  if (currentAttempts >= 5) {
+    db.prepare("UPDATE email_otps SET used = 1 WHERE id = ?").run(record.id);
+    return { valid: false, error: "Too many incorrect verification attempts (5/5). This code has been locked for security. Please request a new code." };
+  }
+
+  if (record.otp !== cleanOtp) {
+    const nextAttempts = currentAttempts + 1;
+    if (nextAttempts >= 5) {
+      db.prepare("UPDATE email_otps SET used = 1, failed_attempts = ? WHERE id = ?").run(nextAttempts, record.id);
+      return { valid: false, error: "Too many incorrect attempts (5/5). Verification code locked. Please request a new code." };
+    } else {
+      db.prepare("UPDATE email_otps SET failed_attempts = ? WHERE id = ?").run(nextAttempts, record.id);
+      return { valid: false, error: `Incorrect verification code (${5 - nextAttempts} attempt${5 - nextAttempts === 1 ? "" : "s"} remaining).` };
+    }
   }
 
   if (markUsed) {
@@ -247,24 +265,44 @@ export async function completeOtpSignup(data: {
   return { user: newUser };
 }
 
-// Authenticate with Password
-export async function authenticateWithPassword(email: string, password: string): Promise<User | null> {
+// Authenticate with Password (with Lockout & Rate Limiting)
+export async function authenticateWithPassword(email: string, password: string): Promise<{ user?: User; error?: string }> {
   const cleanEmail = email.trim().toLowerCase();
   const row = db
-    .prepare("SELECT id, email, username, display_name, password_hash, avatar_color, role, active_organization_id, created_at FROM users WHERE LOWER(email) = ? OR LOWER(username) = ?")
-    .get(cleanEmail, cleanEmail) as (User & { password_hash?: string }) | undefined;
+    .prepare("SELECT id, email, username, display_name, password_hash, avatar_color, role, active_organization_id, failed_attempts, locked_until, created_at FROM users WHERE LOWER(email) = ? OR LOWER(username) = ?")
+    .get(cleanEmail, cleanEmail) as (User & { password_hash?: string; failed_attempts?: number; locked_until?: string }) | undefined;
 
   if (!row || !row.password_hash) {
-    return null;
+    return { error: "Invalid email or password." };
+  }
+
+  // Check if account is temporarily locked
+  if (row.locked_until) {
+    const lockTime = new Date(row.locked_until).getTime();
+    if (lockTime > Date.now()) {
+      const remainingMinutes = Math.ceil((lockTime - Date.now()) / (60 * 1000));
+      return { error: `Account temporarily locked due to 5 consecutive failed attempts. Please try again in ${remainingMinutes} minute(s) or log in with OTP.` };
+    }
   }
 
   const isValid = await bcrypt.compare(password, row.password_hash);
   if (!isValid) {
-    return null;
+    const attempts = (row.failed_attempts || 0) + 1;
+    if (attempts >= 5) {
+      const lockUntil = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      db.prepare("UPDATE users SET failed_attempts = ?, locked_until = ? WHERE id = ?").run(attempts, lockUntil, row.id);
+      return { error: "Too many failed password attempts. Account locked for 15 minutes. Use one-click OTP login to access or reset password." };
+    } else {
+      db.prepare("UPDATE users SET failed_attempts = ? WHERE id = ?").run(attempts, row.id);
+      return { error: `Invalid password. ${5 - attempts} attempt${5 - attempts === 1 ? "" : "s"} remaining before temporary account lock.` };
+    }
   }
 
-  const { password_hash, ...user } = row;
-  return user as User;
+  // Reset failed attempts on success
+  db.prepare("UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = ?").run(row.id);
+
+  const { password_hash, failed_attempts, locked_until, ...user } = row;
+  return { user: user as User };
 }
 
 // Authenticate with OTP (Passwordless Login / Forgot Password alternative)
@@ -282,6 +320,9 @@ export async function authenticateWithOtp(email: string, otp: string): Promise<{
   if (!otpCheck.valid) {
     return { error: otpCheck.error || "Invalid verification code." };
   }
+
+  // Clear any lockout on verified OTP login
+  db.prepare("UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = ?").run(user.id);
 
   return { user };
 }
@@ -597,6 +638,106 @@ export function acceptOrganizationInvitation(
   db.prepare("UPDATE users SET active_organization_id = ? WHERE id = ?").run(invitation.organization_id, userId);
 
   return { success: true, organization: { id: invitation.organization_id, name: invitation.org_name } };
+}
+
+// Get Invitation Details by Token
+export function getInvitationDetails(token: string) {
+  if (!token) return { valid: false, error: "Missing invitation token." };
+  const invitation = db
+    .prepare(`
+      SELECT oi.*, o.name as org_name
+      FROM organization_invitations oi
+      INNER JOIN organizations o ON oi.organization_id = o.id
+      WHERE oi.token = ? AND oi.status = 'pending'
+    `)
+    .get(token.trim()) as any;
+
+  if (!invitation) {
+    return { valid: false, error: "Invitation is invalid or has already been accepted/revoked." };
+  }
+
+  if (Date.now() > new Date(invitation.expires_at).getTime()) {
+    return { valid: false, error: "Invitation has expired." };
+  }
+
+  const existingUser = db.prepare("SELECT id, display_name FROM users WHERE LOWER(email) = ?").get(invitation.invitee_email.toLowerCase()) as any;
+
+  return {
+    valid: true,
+    inviteId: invitation.id,
+    email: invitation.invitee_email,
+    role: invitation.role,
+    organizationId: invitation.organization_id,
+    orgName: invitation.org_name,
+    userExists: !!existingUser,
+    expiresAt: invitation.expires_at,
+  };
+}
+
+// Get all pending invitations for an organization
+export function getOrganizationInvitations(organizationId: string) {
+  return db
+    .prepare(`
+      SELECT id, invitee_email, role, status, expires_at, created_at
+      FROM organization_invitations
+      WHERE organization_id = ? AND status = 'pending'
+      ORDER BY created_at DESC
+    `)
+    .all(organizationId);
+}
+
+// Revoke an organization invitation
+export function revokeOrganizationInvitation(
+  userId: string,
+  invitationId: string
+): { success: boolean; error?: string } {
+  const invitation = db.prepare("SELECT * FROM organization_invitations WHERE id = ?").get(invitationId) as any;
+  if (!invitation) return { success: false, error: "Invitation not found." };
+
+  // Verify caller is admin/owner
+  const member = db.prepare("SELECT role FROM organization_members WHERE organization_id = ? AND user_id = ?").get(invitation.organization_id, userId) as any;
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return { success: false, error: "Only workspace owners or administrators can revoke invitations." };
+  }
+
+  db.prepare("UPDATE organization_invitations SET status = 'revoked' WHERE id = ?").run(invitationId);
+  return { success: true };
+}
+
+// Remove member from organization
+export function removeOrganizationMember(
+  callerUserId: string,
+  organizationId: string,
+  targetUserId: string
+): { success: boolean; error?: string } {
+  if (callerUserId === targetUserId) {
+    return { success: false, error: "You cannot remove yourself from the organization." };
+  }
+
+  const org = db.prepare("SELECT created_by_user_id FROM organizations WHERE id = ?").get(organizationId) as any;
+  if (!org) return { success: false, error: "Organization not found." };
+
+  if (org.created_by_user_id === targetUserId) {
+    return { success: false, error: "The primary organization owner cannot be removed." };
+  }
+
+  // Caller must be owner or admin
+  const callerMember = db.prepare("SELECT role FROM organization_members WHERE organization_id = ? AND user_id = ?").get(organizationId, callerUserId) as any;
+  if (!callerMember || (callerMember.role !== "owner" && callerMember.role !== "admin")) {
+    return { success: false, error: "Access denied. Only organization owners and admins can remove members." };
+  }
+
+  // Delete membership
+  db.prepare("DELETE FROM organization_members WHERE organization_id = ? AND user_id = ?").run(organizationId, targetUserId);
+
+  // If user was currently active on this org, clear active_organization_id
+  const targetUser = db.prepare("SELECT active_organization_id FROM users WHERE id = ?").get(targetUserId) as any;
+  if (targetUser?.active_organization_id === organizationId) {
+    const nextOrg = db.prepare("SELECT organization_id FROM organization_members WHERE user_id = ? LIMIT 1").get(targetUserId) as any;
+    db.prepare("UPDATE users SET active_organization_id = ? WHERE id = ?").run(nextOrg?.organization_id || null, targetUserId);
+  }
+
+  return { success: true };
 }
 
 export function getAllUsers(): User[] {

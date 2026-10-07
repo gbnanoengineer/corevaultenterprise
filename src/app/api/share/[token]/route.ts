@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getActiveOrgContext } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, hashPin } from "@/lib/db";
 import { getAssetBuffer } from "@/lib/storage";
 import path from "path";
 import * as XLSX from "xlsx";
@@ -24,6 +24,34 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
 
     if (!link) {
       return NextResponse.json({ error: "Share link not found or has been revoked" }, { status: 404 });
+    }
+
+    // Verify PIN protection if set
+    const url = new URL(req.url);
+    const providedPin = url.searchParams.get("pin") || req.headers.get("x-share-pin");
+
+    if (link.is_pin_protected) {
+      const isPinValid = providedPin && hashPin(providedPin.trim()) === link.pin_hash;
+      if (!isPinValid) {
+        return NextResponse.json({
+          isPinRequired: true,
+          pinError: providedPin ? "Incorrect PIN entered. Please try again." : undefined,
+          link: {
+            id: link.id,
+            token: link.token,
+            label: link.label,
+            creatorName: link.creator_name,
+            fileName: link.file_name,
+            folderName: link.folder_name,
+            isFile: !!link.file_id,
+            isFolder: !!link.folder_id,
+            isPinProtected: true,
+          },
+          folderFiles: [],
+          previewData: null,
+          downloadUrl: null,
+        });
+      }
     }
 
     // Increment view count

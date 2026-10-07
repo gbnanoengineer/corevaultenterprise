@@ -49,6 +49,8 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
 
   // Invite token if present in URL
   const [inviteToken, setInviteToken] = useState<string | null>(null);
+  const [invitedOrgName, setInvitedOrgName] = useState<string>("");
+  const [isEmailLocked, setIsEmailLocked] = useState(false);
 
   // Loading & feedback states
   const [loading, setLoading] = useState(false);
@@ -63,6 +65,30 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
       const token = params.get("inviteToken");
       if (token) {
         setInviteToken(token);
+        // Automatically retrieve invited email, lock email, and dispatch OTP for new users
+        fetch(`/api/organizations/invite?token=${encodeURIComponent(token)}&autoSend=true`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.valid && data.email) {
+              setEmail(data.email);
+              setIsEmailLocked(true);
+              if (data.orgName) setInvitedOrgName(data.orgName);
+              if (data.userExists) {
+                setStep("login_password");
+                setSuccessMessage(`You've been invited to join ${data.orgName}! Enter your password to accept.`);
+              } else {
+                setStep("signup_otp");
+                setSuccessMessage(`Welcome! You've been invited to join ${data.orgName}. We dispatched a 6-digit verification code to ${data.email}.`);
+                if (data.debugOtp) {
+                  setDebugOtp(data.debugOtp);
+                  setOtp(data.debugOtp);
+                }
+              }
+            } else if (data.error) {
+              setError(data.error);
+            }
+          })
+          .catch((err) => console.warn("Failed to load invitation info:", err));
       }
     }
   }, []);
@@ -481,8 +507,32 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
           )}
         </div>
 
+        {/* Invited Organization Welcome Banner */}
+        {invitedOrgName && (
+          <div style={{
+            background: "linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(6, 182, 212, 0.15) 100%)",
+            border: "1px solid rgba(56, 189, 248, 0.35)",
+            borderRadius: 12,
+            padding: "12px 16px",
+            marginBottom: 20,
+            display: "flex",
+            alignItems: "center",
+            gap: 12
+          }}>
+            <Building size={20} color="#38bdf8" />
+            <div>
+              <div style={{ fontSize: "0.74rem", fontWeight: 700, color: "#38bdf8", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                Workspace Invitation
+              </div>
+              <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "#ffffff" }}>
+                Accepting invite to join <strong style={{ color: "#38bdf8" }}>{invitedOrgName}</strong>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Back navigation button when inside sub-steps */}
-        {step !== "email_entry" && step !== "create_organization" && (
+        {step !== "email_entry" && step !== "create_organization" && !isEmailLocked && (
           <div style={{ marginBottom: 18 }}>
             <button
               id="btn-back-step"

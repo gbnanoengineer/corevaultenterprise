@@ -22,8 +22,11 @@ import {
   CloudUpload,
   RefreshCw,
   FileCode,
-  Cpu
+  Cpu,
+  UserMinus,
+  Trash2
 } from "lucide-react";
+import ConfirmModal from "./ConfirmModal";
 
 interface SettingsViewProps {
   currentUser: any;
@@ -41,9 +44,10 @@ export default function SettingsView({
   const [defaultCurrency, setDefaultCurrency] = useState("USD");
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Organizations & Members
+  // Organizations, Members & Invitations
   const [activeOrg, setActiveOrg] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
+  const [invitations, setInvitations] = useState<any[]>([]);
 
   // Invite member state
   const [inviteEmail, setInviteEmail] = useState("");
@@ -53,6 +57,100 @@ export default function SettingsView({
   const [inviteError, setInviteError] = useState("");
   const [inviteLinkCopied, setInviteLinkCopied] = useState(false);
   const [generatedInviteLink, setGeneratedInviteLink] = useState("");
+
+  // Custom Modal dialog state
+  const [confirmModalState, setConfirmModalState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: "danger" | "warning" | "info" | "success";
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
+
+  const showConfirmModal = (props: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: "danger" | "warning" | "info" | "success";
+    onConfirm: () => void;
+  }) => {
+    setConfirmModalState({
+      isOpen: true,
+      title: props.title,
+      message: props.message,
+      confirmText: props.confirmText || "Confirm",
+      cancelText: props.cancelText !== undefined ? props.cancelText : "Cancel",
+      variant: props.variant || "danger",
+      onConfirm: () => {
+        setConfirmModalState((prev) => ({ ...prev, isOpen: false }));
+        props.onConfirm();
+      },
+    });
+  };
+
+  const showAlertModal = (title: string, message: string, variant: "danger" | "warning" | "info" | "success" = "danger") => {
+    setConfirmModalState({
+      isOpen: true,
+      title,
+      message,
+      confirmText: "OK",
+      cancelText: "",
+      variant,
+      onConfirm: () => {
+        setConfirmModalState((prev) => ({ ...prev, isOpen: false }));
+      },
+    });
+  };
+
+  const handleRevokeInvite = (inviteId: string) => {
+    showConfirmModal({
+      title: "Revoke Team Invitation",
+      message: "Are you sure you want to revoke this pending invitation? The invitation link will immediately stop working.",
+      confirmText: "Revoke Invite",
+      variant: "danger",
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/organizations/invite?id=${encodeURIComponent(inviteId)}`, {
+            method: "DELETE",
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to revoke invitation");
+          fetchSettingsAndOrg();
+        } catch (err: any) {
+          showAlertModal("Action Failed", err.message || "Failed to revoke invitation", "danger");
+        }
+      },
+    });
+  };
+
+  const handleRemoveMember = (memberUserId: string, memberName: string) => {
+    showConfirmModal({
+      title: "Remove Team Member",
+      message: `Are you sure you want to remove ${memberName} from this organization? They will immediately lose access to all shared expenses, invoices, and documents.`,
+      confirmText: "Remove Member",
+      variant: "danger",
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/organizations/members?userId=${encodeURIComponent(memberUserId)}`, {
+            method: "DELETE",
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to remove member");
+          fetchSettingsAndOrg();
+        } catch (err: any) {
+          showAlertModal("Action Failed", err.message || "Failed to remove member", "danger");
+        }
+      },
+    });
+  };
 
   // Change Password form
   const [currentPassword, setCurrentPassword] = useState("");
@@ -101,27 +199,34 @@ export default function SettingsView({
     }
   };
 
-  const handleRestoreFromS3 = async () => {
-    if (!confirm("Are you sure you want to restore the database from the latest cloud S3 backup snapshot? Any local changes since the last backup will be overwritten.")) return;
-    setDbLoading(true);
-    setDbActionMsg("");
-    setDbActionError("");
-    try {
-      const res = await fetch("/api/admin/database", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "restore_from_s3" }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Restore failed");
-      setDbActionMsg(data.message || "Database successfully restored from S3!");
-      fetchDbStats();
-      onRefreshAuth();
-    } catch (err: any) {
-      setDbActionError(err.message || "Failed to restore database from S3");
-    } finally {
-      setDbLoading(false);
-    }
+  const handleRestoreFromS3 = () => {
+    showConfirmModal({
+      title: "Restore Cloud Snapshot",
+      message: "Are you sure you want to restore the database from the latest cloud S3 backup snapshot? Any local changes since the last backup will be overwritten.",
+      confirmText: "Restore Database",
+      variant: "warning",
+      onConfirm: async () => {
+        setDbLoading(true);
+        setDbActionMsg("");
+        setDbActionError("");
+        try {
+          const res = await fetch("/api/admin/database", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "restore_from_s3" }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Restore failed");
+          setDbActionMsg(data.message || "Database successfully restored from S3!");
+          fetchDbStats();
+          onRefreshAuth();
+        } catch (err: any) {
+          setDbActionError(err.message || "Failed to restore database from S3");
+        } finally {
+          setDbLoading(false);
+        }
+      },
+    });
   };
 
   const fetchSettingsAndOrg = async () => {
@@ -141,6 +246,7 @@ export default function SettingsView({
       if (orgsData.activeOrganization) {
         setActiveOrg(orgsData.activeOrganization);
         setMembers(orgsData.members || []);
+        setInvitations(orgsData.invitations || []);
       }
     } catch (err) {
       console.error("Fetch settings error:", err);
@@ -522,22 +628,125 @@ export default function SettingsView({
                   </div>
                 </div>
 
-                <span style={{
-                  fontSize: "0.72rem",
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  padding: "3px 8px",
-                  borderRadius: 4,
-                  background: m.role === "owner" ? "rgba(99, 102, 241, 0.2)" : "rgba(255, 255, 255, 0.05)",
-                  color: m.role === "owner" ? "#818cf8" : "var(--text-secondary)",
-                  border: m.role === "owner" ? "1px solid rgba(99, 102, 241, 0.4)" : "1px solid var(--border-subtle)"
-                }}>
-                  {m.role}
-                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{
+                    fontSize: "0.72rem",
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    padding: "3px 8px",
+                    borderRadius: 4,
+                    background: m.role === "owner" ? "rgba(99, 102, 241, 0.2)" : "rgba(255, 255, 255, 0.05)",
+                    color: m.role === "owner" ? "#818cf8" : "var(--text-secondary)",
+                    border: m.role === "owner" ? "1px solid rgba(99, 102, 241, 0.4)" : "1px solid var(--border-subtle)"
+                  }}>
+                    {m.role}
+                  </span>
+
+                  {/* Admin can remove members (except owner or self) */}
+                  {m.id !== currentUser?.id && m.role !== "owner" && (activeOrg?.role === "owner" || activeOrg?.role === "admin") && (
+                    <button
+                      id={`btn-remove-member-${m.id}`}
+                      onClick={() => handleRemoveMember(m.id, m.display_name)}
+                      title={`Remove ${m.display_name} from organization`}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        padding: "5px 10px",
+                        borderRadius: 6,
+                        background: "rgba(244, 63, 94, 0.1)",
+                        border: "1px solid rgba(244, 63, 94, 0.25)",
+                        color: "#fb7185",
+                        fontSize: "0.74rem",
+                        fontWeight: 600,
+                        cursor: "pointer"
+                      }}
+                    >
+                      <UserMinus size={13} />
+                      <span>Remove</span>
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
         </div>
+
+        {/* Pending Invitations Section */}
+        {invitations.length > 0 && (
+          <div style={{ marginTop: 20 }}>
+            <div style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 10 }}>
+              Pending Invitations ({invitations.length})
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {invitations.map((inv) => (
+                <div
+                  key={inv.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    background: "rgba(255, 255, 255, 0.02)",
+                    border: "1px dashed rgba(255, 255, 255, 0.14)",
+                    borderRadius: 10,
+                    padding: "10px 14px"
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: "50%",
+                      background: "rgba(245, 158, 11, 0.15)",
+                      color: "#fbbf24",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center"
+                    }}>
+                      <Mail size={16} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "#ffffff" }}>
+                        {inv.invitee_email}
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                        Role: {inv.role} &bull; Expires: {new Date(inv.expires_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: "0.72rem", color: "#fbbf24", background: "rgba(245, 158, 11, 0.1)", padding: "2px 8px", borderRadius: 4, border: "1px solid rgba(245, 158, 11, 0.25)", textTransform: "uppercase", fontWeight: 700 }}>
+                      Pending
+                    </span>
+                    <button
+                      id={`btn-revoke-invite-${inv.id}`}
+                      onClick={() => handleRevokeInvite(inv.id)}
+                      title="Revoke this invitation"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        padding: "5px 10px",
+                        borderRadius: 6,
+                        background: "rgba(244, 63, 94, 0.1)",
+                        border: "1px solid rgba(244, 63, 94, 0.25)",
+                        color: "#fb7185",
+                        fontSize: "0.74rem",
+                        fontWeight: 600,
+                        cursor: "pointer"
+                      }}
+                    >
+                      <Trash2 size={13} />
+                      <span>Revoke</span>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Organization Settings */}
@@ -1003,6 +1212,18 @@ export default function SettingsView({
           When deploying to Docker, Railway, Fly.io, or VPS, map a persistent volume to <code style={{ color: "#38bdf8" }}>DATA_DIR=/data</code> or <code style={{ color: "#38bdf8" }}>DATABASE_PATH=/data/corevault.db</code>. With your S3 credentials configured in <code style={{ color: "#38bdf8" }}>.env</code>, CoreVault also automatically detects fresh container redeployments and auto-restores your latest database snapshot from S3 upon startup. You can also download the <strong style={{ color: "#ffffff" }}>ANSI SQL Dump</strong> at any time to migrate your data to PostgreSQL, MySQL, Supabase, or Turso without lock-in.
         </div>
       </div>
+
+      {/* Custom Confirmation / Alert Modal */}
+      <ConfirmModal
+        isOpen={confirmModalState.isOpen}
+        title={confirmModalState.title}
+        message={confirmModalState.message}
+        confirmText={confirmModalState.confirmText}
+        cancelText={confirmModalState.cancelText}
+        variant={confirmModalState.variant}
+        onConfirm={confirmModalState.onConfirm}
+        onCancel={() => setConfirmModalState((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

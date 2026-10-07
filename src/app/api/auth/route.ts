@@ -46,10 +46,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
     }
 
-    const user = await authenticateWithPassword(email, password);
-    if (!user) {
-      return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
+    const authResult = await authenticateWithPassword(email, password);
+    if (!authResult.user) {
+      return NextResponse.json({ error: authResult.error || "Invalid email or password" }, { status: 401 });
     }
+    const user = authResult.user;
 
     await setSessionCookie(user.id);
 

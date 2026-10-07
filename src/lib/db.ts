@@ -19,6 +19,8 @@ try {
   // directory might already exist
 }
 
+import { initPostgres, isPostgresConnected, createPgStatement, pgExec } from "./pg-adapter";
+
 const DEFAULT_DB_NAME = "corevault.db";
 const LEGACY_DB_NAME = "expense_vault.db";
 const defaultDbPath = path.join(DATA_DIR, DEFAULT_DB_NAME);
@@ -29,11 +31,55 @@ const DB_PATH =
   process.env.DATABASE_PATH ||
   (fs.existsSync(legacyDbPath) ? legacyDbPath : defaultDbPath);
 
-const db = new Database(DB_PATH);
+// Dokploy internal PostgreSQL cluster configuration
+const DOKPLOY_PG_URL = "postgresql://postgres:B5yuK4BctpYsfcF8C1kS@jiora-tools-corevault-enterprise-rfb0k4:5432/postgres";
+const PG_URL = process.env.DATABASE_URL || (process.env.NODE_ENV === "production" ? DOKPLOY_PG_URL : "");
 
-// Concurrency PRAGMAs
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
+let pgConnected = false;
+if (PG_URL) {
+  try {
+    pgConnected = initPostgres(PG_URL);
+  } catch (err: any) {
+    console.warn("⚠️ [CoreVault] Failed connecting to PostgreSQL, falling back to SQLite:", err.message);
+  }
+}
+
+const sqliteDb = new Database(DB_PATH);
+if (!pgConnected) {
+  sqliteDb.pragma("journal_mode = WAL");
+  sqliteDb.pragma("foreign_keys = ON");
+}
+
+export function isPostgresActive(): boolean {
+  return isPostgresConnected();
+}
+
+const db = {
+  prepare: (sql: string) => {
+    if (isPostgresConnected()) {
+      return createPgStatement(sql);
+    }
+    return sqliteDb.prepare(sql);
+  },
+  exec: (sql: string) => {
+    if (isPostgresConnected()) {
+      return pgExec(sql);
+    }
+    return sqliteDb.exec(sql);
+  },
+  pragma: (sql: string) => {
+    if (isPostgresConnected()) {
+      return;
+    }
+    return sqliteDb.pragma(sql);
+  },
+  transaction: (fn: any) => {
+    if (isPostgresConnected()) {
+      return (...args: any[]) => fn(...args);
+    }
+    return sqliteDb.transaction(fn);
+  },
+};
 
 export function hashPin(pin: string, salt: string = "org_expense_salt_2026"): string {
   return crypto.pbkdf2Sync(pin, salt, 10000, 32, "sha256").toString("hex");
@@ -297,6 +343,42 @@ export function initDatabase() {
   }
 
   try {
+    db.exec("ALTER TABLE users ADD COLUMN failed_attempts INTEGER DEFAULT 0;");
+  } catch {
+    // column already exists
+  }
+
+  try {
+    db.exec("ALTER TABLE users ADD COLUMN locked_until DATETIME;");
+  } catch {
+    // column already exists
+  }
+
+  try {
+    db.exec("ALTER TABLE email_otps ADD COLUMN failed_attempts INTEGER DEFAULT 0;");
+  } catch {
+    // column already exists
+  }
+
+  try {
+    db.exec("ALTER TABLE shared_links ADD COLUMN pin_hash TEXT;");
+  } catch {
+    // column already exists
+  }
+
+  try {
+    db.exec("ALTER TABLE shared_links ADD COLUMN is_pin_protected INTEGER DEFAULT 0;");
+  } catch {
+    // column already exists
+  }
+
+  try {
+    db.exec("ALTER TABLE subscriptions ADD COLUMN service_key TEXT;");
+  } catch {
+    // column already exists
+  }
+
+  try {
     db.exec("CREATE INDEX IF NOT EXISTS idx_expenses_org ON expenses(organization_id);");
     db.exec("CREATE INDEX IF NOT EXISTS idx_incomes_org ON incomes(organization_id);");
     db.exec("CREATE INDEX IF NOT EXISTS idx_subscriptions_org ON subscriptions(organization_id);");
@@ -424,4 +506,4 @@ export function initDatabase() {
 // Initialize on load
 initDatabase();
 
-export { db, DB_PATH, DATA_DIR, UPLOADS_DIR };
+export { db, DB_PATH, DATA_DIR, UPLOADS_DIR, sqliteDb };

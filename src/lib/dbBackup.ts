@@ -1,4 +1,4 @@
-import { db, DB_PATH, DATA_DIR } from "@/lib/db";
+import { db, DB_PATH, DATA_DIR, isPostgresActive, sqliteDb } from "@/lib/db";
 import { uploadBackupToS3, downloadBackupFromS3, isS3Configured, S3_BUCKET_NAME } from "@/lib/s3";
 import fs from "fs";
 import path from "path";
@@ -10,9 +10,10 @@ let lastBackupSize: number = 0;
  * Get comprehensive database resource, size and health metrics
  */
 export function getDatabaseStats() {
+  const isPg = isPostgresActive();
   let fileSize = 0;
   try {
-    if (fs.existsSync(DB_PATH)) {
+    if (!isPg && fs.existsSync(DB_PATH)) {
       const stat = fs.statSync(DB_PATH);
       fileSize = stat.size;
     }
@@ -21,9 +22,9 @@ export function getDatabaseStats() {
   }
 
   // Count total tables and rows
-  const tables = db
-    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
-    .all() as { name: string }[];
+  const tables = isPg
+    ? (db.prepare("SELECT tablename as name FROM pg_tables WHERE schemaname = 'public'").all() as { name: string }[])
+    : (db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all() as { name: string }[]);
 
   let totalRecords = 0;
   const tableCounts: Record<string, number> = {};
@@ -45,8 +46,10 @@ export function getDatabaseStats() {
   const heapMb = Math.round((memUsage.heapUsed / 1024 / 1024) * 10) / 10;
 
   return {
-    engine: "SQLite 3 (WAL Mode, High Concurrency)",
-    dbPath: DB_PATH,
+    engine: isPg
+      ? "PostgreSQL (Dokploy Internal Cluster: jiora-tools-corevault-enterprise-rfb0k4)"
+      : "SQLite 3 (WAL Mode, High Concurrency)",
+    dbPath: isPg ? "postgresql://postgres:***@jiora-tools-corevault-enterprise-rfb0k4:5432/postgres" : DB_PATH,
     fileSize,
     fileSizeFormatted: formatBytes(fileSize),
     tablesCount: tables.length,
@@ -183,10 +186,15 @@ export async function backupDatabaseToS3(): Promise<{
       // WAL checkpointing best-effort
     }
 
-    const tempBackupPath = path.join(DATA_DIR, `snapshot_temp_${Date.now()}.db`);
+    const tempBackupPath = path.join(DATA_DIR, `snapshot_temp_${Date.now()}.${isPostgresActive() ? "sql" : "db"}`);
 
-    // 2. Perform atomic backup using SQLite backup API
-    await db.backup(tempBackupPath);
+    // 2. Perform atomic backup
+    if (isPostgresActive()) {
+      const sqlDump = exportSqlDump();
+      fs.writeFileSync(tempBackupPath, sqlDump, "utf-8");
+    } else {
+      await sqliteDb.backup(tempBackupPath);
+    }
 
     if (!fs.existsSync(tempBackupPath)) {
       throw new Error("Failed to generate database snapshot file.");

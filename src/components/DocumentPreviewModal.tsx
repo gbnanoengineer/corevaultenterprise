@@ -14,6 +14,7 @@ import {
   Maximize2,
   FileCheck
 } from "lucide-react";
+import MarkdownViewer from "./MarkdownViewer";
 
 interface DocumentPreviewModalProps {
   file: any;
@@ -304,40 +305,47 @@ export default function DocumentPreviewModal({
               />
             </div>
           ) : previewData.type === "code" ? (
-            /* Code / Text Viewer with Copy button */
-            <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span className="badge badge-indigo" style={{ textTransform: "uppercase" }}>
-                  {previewData.language || "code"}
-                </span>
-                <button
-                  id="btn-copy-code"
-                  onClick={handleCopyCode}
-                  className="btn-secondary"
-                  style={{ fontSize: "0.76rem", padding: "5px 10px" }}
-                >
-                  {copiedCode ? <Check size={13} color="#34d399" /> : <Copy size={13} />}
-                  <span>{copiedCode ? "Copied" : "Copy Code"}</span>
-                </button>
+            /* If markdown document, render with GFM & Mermaid diagrams */
+            file.name?.toLowerCase().endsWith(".md") || previewData.ext === ".md" || previewData.language === "markdown" ? (
+              <div style={{ flex: 1, height: "100%", overflow: "hidden", borderRadius: 10 }}>
+                <MarkdownViewer content={previewData.content} title={file.name} />
               </div>
+            ) : (
+              /* Generic Code / Text Viewer with Copy button */
+              <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span className="badge badge-indigo" style={{ textTransform: "uppercase" }}>
+                    {previewData.language || "code"}
+                  </span>
+                  <button
+                    id="btn-copy-code"
+                    onClick={handleCopyCode}
+                    className="btn-secondary"
+                    style={{ fontSize: "0.76rem", padding: "5px 10px" }}
+                  >
+                    {copiedCode ? <Check size={13} color="#34d399" /> : <Copy size={13} />}
+                    <span>{copiedCode ? "Copied" : "Copy Code"}</span>
+                  </button>
+                </div>
 
-              <div style={{
-                flex: 1,
-                overflow: "auto",
-                background: "#080b12",
-                border: "1px solid var(--border-subtle)",
-                borderRadius: 10,
-                padding: "16px 20px",
-                fontFamily: "var(--font-mono)",
-                fontSize: "0.85rem",
-                color: "#e2e8f0",
-                lineHeight: 1.6,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word"
-              }}>
-                {previewData.content}
+                <div style={{
+                  flex: 1,
+                  overflow: "auto",
+                  background: "#080b12",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: 10,
+                  padding: "16px 20px",
+                  fontFamily: "var(--font-mono)",
+                  fontSize: "0.85rem",
+                  color: "#e2e8f0",
+                  lineHeight: 1.6,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word"
+                }}>
+                  {previewData.content}
+                </div>
               </div>
-            </div>
+            )
           ) : previewData.type === "presentation" ? (
             /* PowerPoint / Presentation info */
             <div style={{ textAlign: "center", padding: "60px 0" }}>

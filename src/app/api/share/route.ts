@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getActiveOrgContext } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, hashPin } from "@/lib/db";
 import crypto from "crypto";
 
 export async function GET() {
@@ -41,7 +41,7 @@ export async function POST(req: Request) {
 
     const { user, activeOrg } = context;
     const body = await req.json();
-    const { file_id, folder_id, label } = body;
+    const { file_id, folder_id, label, pin } = body;
 
     if (!file_id && !folder_id) {
       return NextResponse.json({ error: "Either file_id or folder_id is required" }, { status: 400 });
@@ -65,10 +65,13 @@ export async function POST(req: Request) {
     const id = "sh_" + crypto.randomUUID().slice(0, 8);
     const token = crypto.randomBytes(8).toString("hex");
 
+    const isPinProtected = pin && pin.trim().length > 0 ? 1 : 0;
+    const pinHash = isPinProtected ? hashPin(pin.trim()) : null;
+
     db.prepare(`
-      INSERT INTO shared_links (id, token, file_id, folder_id, created_by_user_id, label, view_count, is_active, organization_id)
-      VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?)
-    `).run(id, token, file_id || null, folder_id || null, user.id, label || "Shared Asset", activeOrg.id);
+      INSERT INTO shared_links (id, token, file_id, folder_id, created_by_user_id, label, view_count, is_active, organization_id, is_pin_protected, pin_hash)
+      VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?, ?)
+    `).run(id, token, file_id || null, folder_id || null, user.id, label || "Shared Asset", activeOrg.id, isPinProtected, pinHash);
 
     const created = db.prepare("SELECT * FROM shared_links WHERE id = ? AND organization_id = ?").get(id, activeOrg.id);
 

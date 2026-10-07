@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, hashPin } from "@/lib/db";
 import { getAssetBuffer } from "@/lib/storage";
 
 export async function GET(req: Request, { params }: { params: Promise<{ token: string; fileId: string }> }) {
@@ -10,6 +10,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     const link = db.prepare("SELECT * FROM shared_links WHERE token = ? AND is_active = 1").get(token) as any;
     if (!link) {
       return new NextResponse("Invalid or expired share link", { status: 404 });
+    }
+
+    // Verify PIN if protected
+    if (link.is_pin_protected) {
+      const url = new URL(req.url);
+      const providedPin = url.searchParams.get("pin") || req.headers.get("x-share-pin");
+      if (!providedPin || hashPin(providedPin.trim()) !== link.pin_hash) {
+        return new NextResponse("Access PIN required to access this file", { status: 401 });
+      }
     }
 
     // Verify the file is either the direct shared file or belongs to the shared folder

@@ -13,6 +13,7 @@ import {
   X,
   Building2
 } from "lucide-react";
+import ConfirmModal from "./ConfirmModal";
 
 interface IncomesViewProps {
   currentUser: any;
@@ -141,10 +142,17 @@ export default function IncomesView({
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this income record?")) return;
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  const handleDelete = (id: string) => {
+    setDeleteConfirmId(id);
+  };
+
+  const executeDelete = async () => {
+    if (!deleteConfirmId) return;
     try {
-      await fetch(`/api/incomes/${id}`, { method: "DELETE" });
+      await fetch(`/api/incomes/${deleteConfirmId}`, { method: "DELETE" });
+      setDeleteConfirmId(null);
       fetchIncomes();
     } catch (err) {
       console.error("Delete income error:", err);
@@ -489,6 +497,18 @@ export default function IncomesView({
           </div>
         </div>
       )}
+
+      {/* Custom Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deleteConfirmId}
+        title="Delete Income Record"
+        message="Are you sure you want to delete this recorded income inflow? This will adjust your total revenue and cash balance."
+        confirmText="Delete Record"
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={executeDelete}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
     </div>
   );
 }

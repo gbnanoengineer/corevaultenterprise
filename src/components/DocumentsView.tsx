@@ -26,6 +26,7 @@ import {
   Clock
 } from "lucide-react";
 import DocumentPreviewModal from "./DocumentPreviewModal";
+import ConfirmModal from "./ConfirmModal";
 
 interface DocumentsViewProps {
   currentUser: any;
@@ -66,6 +67,47 @@ export default function DocumentsView({
   // Share Link Data
   const [generatedShare, setGeneratedShare] = useState<any>(null);
   const [copiedShareLink, setCopiedShareLink] = useState(false);
+  const [shareRequirePin, setShareRequirePin] = useState(false);
+  const [sharePin, setSharePin] = useState("");
+  const [sharingLoading, setSharingLoading] = useState(false);
+
+  // Custom Modal dialog state
+  const [confirmModalState, setConfirmModalState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: "danger" | "warning" | "info" | "success";
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
+
+  const showConfirmModal = (props: {
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: "danger" | "warning" | "info" | "success";
+    onConfirm: () => void;
+  }) => {
+    setConfirmModalState({
+      isOpen: true,
+      title: props.title,
+      message: props.message,
+      confirmText: props.confirmText || "Confirm",
+      cancelText: props.cancelText !== undefined ? props.cancelText : "Cancel",
+      variant: props.variant || "danger",
+      onConfirm: () => {
+        setConfirmModalState((prev) => ({ ...prev, isOpen: false }));
+        props.onConfirm();
+      },
+    });
+  };
 
   const fetchDirectory = async (folderId: string | null = currentFolderId) => {
     try {
@@ -109,14 +151,21 @@ export default function DocumentsView({
     }
   };
 
-  const handleDeleteFolder = async (folderId: string) => {
-    if (!confirm("Delete this folder and all contents inside?")) return;
-    try {
-      await fetch(`/api/folders?id=${folderId}`, { method: "DELETE" });
-      fetchDirectory();
-    } catch (err) {
-      console.error("Delete folder error:", err);
-    }
+  const handleDeleteFolder = (folderId: string) => {
+    showConfirmModal({
+      title: "Delete Folder",
+      message: "Are you sure you want to delete this folder and all contents inside? This action cannot be undone.",
+      confirmText: "Delete Folder",
+      variant: "danger",
+      onConfirm: async () => {
+        try {
+          await fetch(`/api/folders?id=${folderId}`, { method: "DELETE" });
+          fetchDirectory();
+        } catch (err) {
+          console.error("Delete folder error:", err);
+        }
+      },
+    });
   };
 
   const handleUploadFile = async (e: React.FormEvent) => {
@@ -164,26 +213,33 @@ export default function DocumentsView({
     }
   };
 
-  const handleDeleteFile = async (fileId: string) => {
-    if (!confirm("Are you sure you want to delete this file?")) return;
-    try {
-      await fetch(`/api/files/${fileId}`, { method: "DELETE" });
-      fetchDirectory();
-    } catch (err) {
-      console.error("Delete file error:", err);
-    }
+  const handleDeleteFile = (fileId: string) => {
+    showConfirmModal({
+      title: "Delete File",
+      message: "Are you sure you want to delete this file from the organization vault? This action cannot be undone.",
+      confirmText: "Delete File",
+      variant: "danger",
+      onConfirm: async () => {
+        try {
+          await fetch(`/api/files/${fileId}`, { method: "DELETE" });
+          fetchDirectory();
+        } catch (err) {
+          console.error("Delete file error:", err);
+        }
+      },
+    });
   };
 
-  const handleOpenShare = async (resource: { type: "file" | "folder"; item: any }) => {
-    setSharingResource(resource);
-    setGeneratedShare(null);
-    setCopiedShareLink(false);
-    setShowShareModal(true);
-
+  const createShareLink = async (resource: any, pinValue?: string) => {
+    setSharingLoading(true);
     try {
-      const body = resource.type === "file"
+      const body: any = resource.type === "file"
         ? { file_id: resource.item.id, label: `Share for ${resource.item.name}` }
         : { folder_id: resource.item.id, label: `Share for folder ${resource.item.name}` };
+
+      if (pinValue && pinValue.trim()) {
+        body.pin = pinValue.trim();
+      }
 
       const res = await fetch("/api/share", {
         method: "POST",
@@ -196,7 +252,19 @@ export default function DocumentsView({
       }
     } catch (err) {
       console.error("Generate share error:", err);
+    } finally {
+      setSharingLoading(false);
     }
+  };
+
+  const handleOpenShare = async (resource: { type: "file" | "folder"; item: any }) => {
+    setSharingResource(resource);
+    setGeneratedShare(null);
+    setCopiedShareLink(false);
+    setShareRequirePin(false);
+    setSharePin("");
+    setShowShareModal(true);
+    await createShareLink(resource);
   };
 
   const handleCopyLink = () => {
@@ -835,6 +903,69 @@ export default function DocumentsView({
                     <ExternalLink size={12} />
                   </a>
                 </div>
+
+                {/* PIN Protection Control */}
+                <div style={{
+                  background: "rgba(255, 255, 255, 0.03)",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: 12,
+                  padding: "14px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                  marginTop: 4,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: "0.85rem", fontWeight: 600, color: "#ffffff" }}>
+                      <input
+                        type="checkbox"
+                        checked={shareRequirePin}
+                        onChange={(e) => setShareRequirePin(e.target.checked)}
+                        style={{ accentColor: "var(--accent-primary)", width: 16, height: 16 }}
+                      />
+                      <span>Require Access PIN for Client</span>
+                    </label>
+                    <span style={{ fontSize: "0.75rem", color: shareRequirePin ? "#38bdf8" : "var(--text-muted)" }}>
+                      {shareRequirePin ? "PIN Gate Active" : "Open Access"}
+                    </span>
+                  </div>
+
+                  {shareRequirePin && (
+                    <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                      <input
+                        type="text"
+                        placeholder="Enter 4-8 digit PIN (e.g. 8492)"
+                        value={sharePin}
+                        onChange={(e) => setSharePin(e.target.value)}
+                        style={{
+                          flex: 1,
+                          padding: "8px 12px",
+                          borderRadius: 8,
+                          background: "#080b12",
+                          border: "1px solid var(--border-medium)",
+                          color: "#ffffff",
+                          fontSize: "0.85rem",
+                          outline: "none",
+                        }}
+                      />
+                      <button
+                        onClick={() => createShareLink(sharingResource, sharePin)}
+                        disabled={sharingLoading || !sharePin.trim()}
+                        className="btn-primary"
+                        style={{ padding: "8px 14px", fontSize: "0.8rem", whiteSpace: "nowrap" }}
+                      >
+                        {sharingLoading ? "Updating..." : "Apply PIN"}
+                      </button>
+                    </div>
+                  )}
+
+                  {generatedShare?.share?.is_pin_protected ? (
+                    <div style={{ fontSize: "0.78rem", color: "#34d399", display: "flex", alignItems: "center", gap: 6 }}>
+                      <Lock size={13} />
+                      <span>This shared link is PIN-protected. The client will be asked for the access PIN.</span>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             ) : (
               <div style={{ textAlign: "center", padding: "20px 0", color: "var(--text-secondary)" }}>
@@ -850,6 +981,18 @@ export default function DocumentsView({
           </div>
         </div>
       )}
+
+      {/* Custom Confirmation / Alert Modal */}
+      <ConfirmModal
+        isOpen={confirmModalState.isOpen}
+        title={confirmModalState.title}
+        message={confirmModalState.message}
+        confirmText={confirmModalState.confirmText}
+        cancelText={confirmModalState.cancelText}
+        variant={confirmModalState.variant}
+        onConfirm={confirmModalState.onConfirm}
+        onCancel={() => setConfirmModalState((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

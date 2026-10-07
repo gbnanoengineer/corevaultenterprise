@@ -5,6 +5,7 @@ import {
   getActiveOrganization,
   createOrganization,
   getOrganizationMembers,
+  getOrganizationInvitations,
 } from "@/lib/auth";
 
 export async function GET() {
@@ -17,11 +18,13 @@ export async function GET() {
     const organizations = getUserOrganizations(user.id);
     const activeOrg = getActiveOrganization(user.id);
     const members = activeOrg ? getOrganizationMembers(activeOrg.id) : [];
+    const invitations = activeOrg ? getOrganizationInvitations(activeOrg.id) : [];
 
     return NextResponse.json({
       organizations,
       activeOrganization: activeOrg,
       members,
+      invitations,
     });
   } catch (error) {
     console.error("Organizations GET error:", error);

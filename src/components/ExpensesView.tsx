@@ -24,7 +24,10 @@ interface ExpensesViewProps {
   isAddModalOpenInitially?: boolean;
 }
 
+import ConfirmModal from "./ConfirmModal";
+
 const CATEGORIES = [
+  "AI & LLM Services",
   "Software & SaaS",
   "Cloud & Hosting",
   "Hardware & Equipment",
@@ -159,10 +162,17 @@ export default function ExpensesView({
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this expense record?")) return;
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+
+  const handleDelete = (id: string) => {
+    setDeleteConfirmId(id);
+  };
+
+  const executeDelete = async () => {
+    if (!deleteConfirmId) return;
     try {
-      await fetch(`/api/expenses/${id}`, { method: "DELETE" });
+      await fetch(`/api/expenses/${deleteConfirmId}`, { method: "DELETE" });
+      setDeleteConfirmId(null);
       fetchExpenses();
     } catch (err) {
       console.error("Delete expense error:", err);
@@ -610,6 +620,18 @@ export default function ExpensesView({
           </div>
         </div>
       )}
+
+      {/* Custom Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deleteConfirmId}
+        title="Delete Expense Record"
+        message="Are you sure you want to delete this expense record? This will immediately update your ledger balances and cash flow reports."
+        confirmText="Delete Record"
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={executeDelete}
+        onCancel={() => setDeleteConfirmId(null)}
+      />
     </div>
   );
 }
