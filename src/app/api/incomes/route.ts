@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getActiveOrgContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import crypto from "crypto";
 
 export async function GET(req: Request) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
+
+    const { activeOrg } = context;
+    const orgId = activeOrg.id;
 
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
@@ -20,9 +23,9 @@ export async function GET(req: Request) {
       FROM incomes i
       JOIN users u ON i.received_by_user_id = u.id
       LEFT JOIN files f ON i.invoice_file_id = f.id
-      WHERE 1=1
+      WHERE i.organization_id = ?
     `;
-    const params: any[] = [];
+    const params: any[] = [orgId];
 
     if (status && status !== "all") {
       query += ` AND i.status = ?`;
@@ -37,8 +40,8 @@ export async function GET(req: Request) {
 
     const incomes = db.prepare(query).all(...params);
 
-    const totalReceived = db.prepare(`SELECT SUM(amount) as total FROM incomes WHERE status = 'received'`).get() as { total: number | null };
-    const totalPending = db.prepare(`SELECT SUM(amount) as total FROM incomes WHERE status = 'pending'`).get() as { total: number | null };
+    const totalReceived = db.prepare(`SELECT SUM(amount) as total FROM incomes WHERE status = 'received' AND organization_id = ?`).get(orgId) as { total: number | null };
+    const totalPending = db.prepare(`SELECT SUM(amount) as total FROM incomes WHERE status = 'pending' AND organization_id = ?`).get(orgId) as { total: number | null };
 
     return NextResponse.json({
       incomes,
@@ -55,17 +58,20 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
+
+    const { user, activeOrg } = context;
+    const orgId = activeOrg.id;
 
     const body = await req.json();
     const {
       title,
       client_name,
       amount,
-      currency = "USD",
+      currency = activeOrg.currency || "USD",
       date = new Date().toISOString().split("T")[0],
       received_by_user_id = user.id,
       status = "received",
@@ -77,11 +83,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Valid title, client name, and amount required" }, { status: 400 });
     }
 
+    const recipientMember = db.prepare("SELECT id FROM organization_members WHERE organization_id = ? AND user_id = ?").get(orgId, received_by_user_id);
+    if (!recipientMember) {
+      return NextResponse.json({ error: "The designated recipient is not a member of this organization." }, { status: 400 });
+    }
+
+    if (invoice_file_id) {
+      const fileCheck = db.prepare("SELECT id FROM files WHERE id = ? AND organization_id = ?").get(invoice_file_id, orgId);
+      if (!fileCheck) {
+        return NextResponse.json({ error: "Invoice file not found or access denied in this organization." }, { status: 400 });
+      }
+    }
+
     const id = "inc_" + crypto.randomUUID().slice(0, 8);
 
     db.prepare(`
-      INSERT INTO incomes (id, title, client_name, amount, currency, date, received_by_user_id, status, notes, invoice_file_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO incomes (id, title, client_name, amount, currency, date, received_by_user_id, status, notes, invoice_file_id, organization_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       title.trim(),
@@ -92,15 +110,16 @@ export async function POST(req: Request) {
       received_by_user_id,
       status,
       notes,
-      invoice_file_id
+      invoice_file_id,
+      orgId
     );
 
     const created = db.prepare(`
       SELECT i.*, u.display_name as received_by_name, u.avatar_color as received_by_color
       FROM incomes i
       JOIN users u ON i.received_by_user_id = u.id
-      WHERE i.id = ?
-    `).get(id);
+      WHERE i.id = ? AND i.organization_id = ?
+    `).get(id, orgId);
 
     return NextResponse.json({ success: true, income: created });
   } catch (error) {

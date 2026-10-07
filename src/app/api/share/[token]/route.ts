@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getActiveOrgContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getAssetBuffer } from "@/lib/storage";
 import path from "path";
@@ -95,13 +95,18 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ token: string }> }) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
 
+    const { activeOrg } = context;
     const { token } = await params;
-    db.prepare("DELETE FROM shared_links WHERE token = ?").run(token);
+    const result = db.prepare("DELETE FROM shared_links WHERE token = ? AND organization_id = ?").run(token, activeOrg.id);
+
+    if (result.changes === 0) {
+      return NextResponse.json({ error: "Share link not found or access denied in this organization" }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

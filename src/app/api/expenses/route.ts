@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getActiveOrgContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import crypto from "crypto";
 
 export async function GET(req: Request) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
+
+    const { activeOrg } = context;
+    const orgId = activeOrg.id;
 
     const { searchParams } = new URL(req.url);
     const category = searchParams.get("category");
@@ -22,9 +25,9 @@ export async function GET(req: Request) {
       FROM expenses e
       JOIN users u ON e.paid_by_user_id = u.id
       LEFT JOIN files f ON e.receipt_file_id = f.id
-      WHERE 1=1
+      WHERE e.organization_id = ?
     `;
-    const params: any[] = [];
+    const params: any[] = [orgId];
 
     if (category && category !== "all") {
       query += ` AND e.category = ?`;
@@ -47,22 +50,24 @@ export async function GET(req: Request) {
 
     const expenses = db.prepare(query).all(...params);
 
-    // Compute summaries
+    // Compute summaries strictly for active organization
     const totalsByCategory = db.prepare(`
       SELECT category, SUM(amount) as total
       FROM expenses
+      WHERE organization_id = ?
       GROUP BY category
       ORDER BY total DESC
-    `).all();
+    `).all(orgId);
 
     const totalsByPartner = db.prepare(`
       SELECT u.id, u.display_name, SUM(e.amount) as total
       FROM expenses e
       JOIN users u ON e.paid_by_user_id = u.id
+      WHERE e.organization_id = ?
       GROUP BY u.id
-    `).all();
+    `).all(orgId);
 
-    const overallTotal = db.prepare(`SELECT SUM(amount) as total FROM expenses`).get() as { total: number | null };
+    const overallTotal = db.prepare(`SELECT SUM(amount) as total FROM expenses WHERE organization_id = ?`).get(orgId) as { total: number | null };
 
     return NextResponse.json({
       expenses,
@@ -80,17 +85,20 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
+
+    const { user, activeOrg } = context;
+    const orgId = activeOrg.id;
 
     const body = await req.json();
     const {
       title,
       category,
       amount,
-      currency = "USD",
+      currency = activeOrg.currency || "USD",
       date = new Date().toISOString().split("T")[0],
       paid_by_user_id = user.id,
       payment_method = "Company Card",
@@ -104,11 +112,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Valid title and numeric amount required" }, { status: 400 });
     }
 
+    const payerMember = db.prepare("SELECT id FROM organization_members WHERE organization_id = ? AND user_id = ?").get(orgId, paid_by_user_id);
+    if (!payerMember) {
+      return NextResponse.json({ error: "The designated payer is not a member of this organization." }, { status: 400 });
+    }
+
+    if (receipt_file_id) {
+      const fileCheck = db.prepare("SELECT id FROM files WHERE id = ? AND organization_id = ?").get(receipt_file_id, orgId);
+      if (!fileCheck) {
+        return NextResponse.json({ error: "Receipt file not found or access denied in this organization." }, { status: 400 });
+      }
+    }
+
     const id = "exp_" + crypto.randomUUID().slice(0, 8);
 
     db.prepare(`
-      INSERT INTO expenses (id, title, category, amount, currency, date, paid_by_user_id, payment_method, split_type, notes, receipt_file_id, status)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO expenses (id, title, category, amount, currency, date, paid_by_user_id, payment_method, split_type, notes, receipt_file_id, status, organization_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       title.trim(),
@@ -121,15 +141,16 @@ export async function POST(req: Request) {
       split_type,
       notes,
       receipt_file_id,
-      status
+      status,
+      orgId
     );
 
     const created = db.prepare(`
       SELECT e.*, u.display_name as paid_by_name, u.avatar_color as paid_by_color
       FROM expenses e
       JOIN users u ON e.paid_by_user_id = u.id
-      WHERE e.id = ?
-    `).get(id);
+      WHERE e.id = ? AND e.organization_id = ?
+    `).get(id, orgId);
 
     return NextResponse.json({ success: true, expense: created });
   } catch (error) {

@@ -1,25 +1,23 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser, getAllUsers } from "@/lib/auth";
+import { getActiveOrgContext, getOrganizationMembers } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { isS3Configured, S3_BUCKET_NAME } from "@/lib/s3";
 
 export async function GET() {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
 
-    const orgName = (db.prepare("SELECT value FROM system_settings WHERE key = 'org_name'").get() as any)?.value || "Acme Core Ventures";
-    const defaultCurrency = (db.prepare("SELECT value FROM system_settings WHERE key = 'default_currency'").get() as any)?.value || "USD";
-    const masterRecoveryKey = (db.prepare("SELECT value FROM system_settings WHERE key = 'master_recovery_key'").get() as any)?.value || "MASTER-RESTORE-KEY";
-
-    const partners = getAllUsers();
+    const { activeOrg } = context;
+    const partners = getOrganizationMembers(activeOrg.id);
 
     return NextResponse.json({
-      orgName,
-      defaultCurrency,
-      masterRecoveryKey,
+      orgName: activeOrg.name,
+      defaultCurrency: activeOrg.currency || "USD",
+      organizationId: activeOrg.id,
+      role: activeOrg.role,
       partners,
       storage: {
         isS3Configured,
@@ -37,31 +35,25 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
+    }
+
+    const { activeOrg, isOwner, isAdmin } = context;
+
+    if (!isOwner && !isAdmin) {
+      return NextResponse.json({ error: "Only organization owners and admins can modify organization settings." }, { status: 403 });
     }
 
     const body = await req.json();
-    const { orgName, defaultCurrency, partners } = body;
+    const { orgName, defaultCurrency } = body;
 
     if (orgName) {
-      db.prepare("INSERT OR REPLACE INTO system_settings (key, value) VALUES ('org_name', ?)").run(orgName.trim());
+      db.prepare("UPDATE organizations SET name = ? WHERE id = ?").run(orgName.trim(), activeOrg.id);
     }
     if (defaultCurrency) {
-      db.prepare("INSERT OR REPLACE INTO system_settings (key, value) VALUES ('default_currency', ?)").run(defaultCurrency);
-    }
-
-    if (Array.isArray(partners)) {
-      partners.forEach((p: any) => {
-        if (p.id && p.display_name) {
-          db.prepare("UPDATE users SET display_name = ?, avatar_color = ? WHERE id = ?").run(
-            p.display_name.trim(),
-            p.avatar_color || "#3b82f6",
-            p.id
-          );
-        }
-      });
+      db.prepare("UPDATE organizations SET currency = ? WHERE id = ?").run(defaultCurrency, activeOrg.id);
     }
 
     return NextResponse.json({ success: true });

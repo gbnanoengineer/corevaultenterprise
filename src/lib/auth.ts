@@ -424,6 +424,29 @@ export function getActiveOrganization(userId: string): Organization | null {
   return null;
 }
 
+// Active organization context with strict tenancy check
+export async function getActiveOrgContext(): Promise<{
+  user: User;
+  activeOrg: Organization;
+  role: string;
+  isOwner: boolean;
+  isAdmin: boolean;
+} | null> {
+  const user = await getCurrentUser();
+  if (!user) return null;
+
+  const activeOrg = getActiveOrganization(user.id);
+  if (!activeOrg) return null;
+
+  return {
+    user,
+    activeOrg,
+    role: activeOrg.role,
+    isOwner: activeOrg.role === "owner",
+    isAdmin: activeOrg.role === "admin" || activeOrg.role === "owner",
+  };
+}
+
 // Create new Organization
 export function createOrganization(
   userId: string,
@@ -499,6 +522,11 @@ export async function inviteUserToOrganization(
 
   const org = db.prepare("SELECT name FROM organizations WHERE id = ?").get(organizationId) as { name: string } | undefined;
   if (!org) return { success: false, error: "Organization not found." };
+
+  const inviterMember = db.prepare("SELECT role FROM organization_members WHERE organization_id = ? AND user_id = ?").get(organizationId, inviterUserId) as { role: string } | undefined;
+  if (!inviterMember) {
+    return { success: false, error: "Access denied. You do not have permission to invite members to this organization." };
+  }
 
   const inviter = db.prepare("SELECT display_name FROM users WHERE id = ?").get(inviterUserId) as { display_name: string } | undefined;
 

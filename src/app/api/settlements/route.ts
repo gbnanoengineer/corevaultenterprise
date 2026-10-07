@@ -1,27 +1,38 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser, getAllUsers } from "@/lib/auth";
+import { getActiveOrgContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import crypto from "crypto";
 
 export async function GET() {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
 
-    const partners = getAllUsers();
+    const { activeOrg } = context;
+    const orgId = activeOrg.id;
+
+    // Organization members
+    const partners = db.prepare(`
+      SELECT u.id, u.display_name, u.avatar_color, om.role
+      FROM organization_members om
+      JOIN users u ON om.user_id = u.id
+      WHERE om.organization_id = ?
+    `).all(orgId) as any[];
+
     const p1 = partners[0];
     const p2 = partners[1];
 
-    // Get all expenses
+    // Get organization expenses
     const expenses = db.prepare(`
       SELECT e.*, u.display_name as paid_by_name
       FROM expenses e
       JOIN users u ON e.paid_by_user_id = u.id
-    `).all() as any[];
+      WHERE e.organization_id = ?
+    `).all(orgId) as any[];
 
-    // Get all past settlements
+    // Get organization settlements
     const settlements = db.prepare(`
       SELECT s.*,
              u1.display_name as from_user_name, u1.avatar_color as from_user_color,
@@ -29,8 +40,9 @@ export async function GET() {
       FROM settlements s
       JOIN users u1 ON s.from_user_id = u1.id
       JOIN users u2 ON s.to_user_id = u2.id
+      WHERE s.organization_id = ?
       ORDER BY s.date DESC, s.created_at DESC
-    `).all() as any[];
+    `).all(orgId) as any[];
 
     let p1PaidOutPocket = 0;
     let p2PaidOutPocket = 0;
@@ -59,7 +71,7 @@ export async function GET() {
       }
     });
 
-    // Factor in settlement payments already made
+    // Factor in settlement payments already made within organization
     let p2PaidToP1InSettlement = 0;
     let p1PaidToP2InSettlement = 0;
 
@@ -73,7 +85,7 @@ export async function GET() {
       }
     });
 
-    // Net balance calculation: positive means P2 owes P1; negative means P1 owes P2
+    // Net balance calculation
     const netP2OwesP1 = (p2OwesP1FromExpenses - p2PaidToP1InSettlement) - (p1OwesP2FromExpenses - p1PaidToP2InSettlement);
 
     let summaryText = "All balances are settled!";
@@ -117,24 +129,31 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
 
+    const { activeOrg } = context;
     const body = await req.json();
-    const { from_user_id, to_user_id, amount, currency = "USD", date = new Date().toISOString().split("T")[0], notes = "" } = body;
+    const { from_user_id, to_user_id, amount, currency = activeOrg.currency || "USD", date = new Date().toISOString().split("T")[0], notes = "" } = body;
 
     if (!from_user_id || !to_user_id || !amount || isNaN(parseFloat(amount))) {
       return NextResponse.json({ error: "Sender, recipient, and positive amount required" }, { status: 400 });
     }
 
+    const senderMember = db.prepare("SELECT id FROM organization_members WHERE organization_id = ? AND user_id = ?").get(activeOrg.id, from_user_id);
+    const recipientMember = db.prepare("SELECT id FROM organization_members WHERE organization_id = ? AND user_id = ?").get(activeOrg.id, to_user_id);
+    if (!senderMember || !recipientMember) {
+      return NextResponse.json({ error: "Both sender and recipient must be members of the active organization" }, { status: 400 });
+    }
+
     const id = "set_" + crypto.randomUUID().slice(0, 8);
 
     db.prepare(`
-      INSERT INTO settlements (id, from_user_id, to_user_id, amount, currency, date, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, from_user_id, to_user_id, parseFloat(amount), currency, date, notes);
+      INSERT INTO settlements (id, from_user_id, to_user_id, amount, currency, date, notes, organization_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, from_user_id, to_user_id, parseFloat(amount), currency, date, notes, activeOrg.id);
 
     const created = db.prepare(`
       SELECT s.*,
@@ -143,8 +162,8 @@ export async function POST(req: Request) {
       FROM settlements s
       JOIN users u1 ON s.from_user_id = u1.id
       JOIN users u2 ON s.to_user_id = u2.id
-      WHERE s.id = ?
-    `).get(id);
+      WHERE s.id = ? AND s.organization_id = ?
+    `).get(id, activeOrg.id);
 
     return NextResponse.json({ success: true, settlement: created });
   } catch (error) {

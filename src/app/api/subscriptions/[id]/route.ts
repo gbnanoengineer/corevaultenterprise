@@ -1,28 +1,29 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getActiveOrgContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
 
+    const { activeOrg } = context;
     const { id } = await params;
     const body = await req.json();
     const { name, category, cost, currency, billing_cycle, next_renewal_date, payment_method, auto_renew, active, notes, url } = body;
 
-    db.prepare(`
+    const result = db.prepare(`
       UPDATE subscriptions
       SET name = ?, category = ?, cost = ?, currency = ?, billing_cycle = ?,
           next_renewal_date = ?, payment_method = ?, auto_renew = ?, active = ?, notes = ?, url = ?
-      WHERE id = ?
+      WHERE id = ? AND organization_id = ?
     `).run(
       name,
       category,
       parseFloat(cost),
-      currency || "USD",
+      currency || activeOrg.currency || "USD",
       billing_cycle,
       next_renewal_date,
       payment_method,
@@ -30,8 +31,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       active ? 1 : 0,
       notes,
       url,
-      id
+      id,
+      activeOrg.id
     );
+
+    if (result.changes === 0) {
+      return NextResponse.json({ error: "Subscription not found or access denied." }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -42,13 +48,18 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
 
+    const { activeOrg } = context;
     const { id } = await params;
-    db.prepare("DELETE FROM subscriptions WHERE id = ?").run(id);
+    const result = db.prepare("DELETE FROM subscriptions WHERE id = ? AND organization_id = ?").run(id, activeOrg.id);
+
+    if (result.changes === 0) {
+      return NextResponse.json({ error: "Subscription not found or access denied." }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -1,19 +1,23 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getActiveOrgContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import crypto from "crypto";
 
 export async function GET() {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
+
+    const { activeOrg } = context;
+    const orgId = activeOrg.id;
 
     const subscriptions = db.prepare(`
       SELECT * FROM subscriptions
+      WHERE organization_id = ?
       ORDER BY next_renewal_date ASC, cost DESC
-    `).all() as any[];
+    `).all(orgId) as any[];
 
     // Compute monthly equivalent burn
     let monthlyBurn = 0;
@@ -45,17 +49,20 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
+
+    const { activeOrg } = context;
+    const orgId = activeOrg.id;
 
     const body = await req.json();
     const {
       name,
       category = "Dev Tools",
       cost,
-      currency = "USD",
+      currency = activeOrg.currency || "USD",
       billing_cycle = "monthly",
       next_renewal_date,
       payment_method = "Company Card",
@@ -72,8 +79,8 @@ export async function POST(req: Request) {
     const id = "sub_" + crypto.randomUUID().slice(0, 8);
 
     db.prepare(`
-      INSERT INTO subscriptions (id, name, category, cost, currency, billing_cycle, next_renewal_date, payment_method, auto_renew, active, notes, url)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO subscriptions (id, name, category, cost, currency, billing_cycle, next_renewal_date, payment_method, auto_renew, active, notes, url, organization_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       name.trim(),
@@ -86,10 +93,11 @@ export async function POST(req: Request) {
       auto_renew ? 1 : 0,
       active ? 1 : 0,
       notes,
-      url
+      url,
+      orgId
     );
 
-    const created = db.prepare("SELECT * FROM subscriptions WHERE id = ?").get(id);
+    const created = db.prepare("SELECT * FROM subscriptions WHERE id = ? AND organization_id = ?").get(id, orgId);
     return NextResponse.json({ success: true, subscription: created });
   } catch (error) {
     console.error("Subscriptions POST error:", error);

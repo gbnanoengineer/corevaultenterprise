@@ -1,14 +1,16 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getActiveOrgContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import crypto from "crypto";
 
 export async function GET() {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
+
+    const { activeOrg } = context;
 
     const links = db.prepare(`
       SELECT sl.*,
@@ -19,8 +21,9 @@ export async function GET() {
       LEFT JOIN files f ON sl.file_id = f.id
       LEFT JOIN folders fo ON sl.folder_id = fo.id
       LEFT JOIN users u ON sl.created_by_user_id = u.id
+      WHERE sl.organization_id = ?
       ORDER BY sl.created_at DESC
-    `).all();
+    `).all(activeOrg.id);
 
     return NextResponse.json({ links });
   } catch (error) {
@@ -31,11 +34,12 @@ export async function GET() {
 
 export async function POST(req: Request) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
 
+    const { user, activeOrg } = context;
     const body = await req.json();
     const { file_id, folder_id, label } = body;
 
@@ -43,15 +47,30 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Either file_id or folder_id is required" }, { status: 400 });
     }
 
+    // Verify file or folder belongs to active organization
+    if (file_id) {
+      const fileCheck = db.prepare("SELECT id FROM files WHERE id = ? AND organization_id = ?").get(file_id, activeOrg.id);
+      if (!fileCheck) {
+        return NextResponse.json({ error: "File not found or access denied in this organization" }, { status: 404 });
+      }
+    }
+
+    if (folder_id) {
+      const folderCheck = db.prepare("SELECT id FROM folders WHERE id = ? AND organization_id = ?").get(folder_id, activeOrg.id);
+      if (!folderCheck) {
+        return NextResponse.json({ error: "Folder not found or access denied in this organization" }, { status: 404 });
+      }
+    }
+
     const id = "sh_" + crypto.randomUUID().slice(0, 8);
     const token = crypto.randomBytes(8).toString("hex");
 
     db.prepare(`
-      INSERT INTO shared_links (id, token, file_id, folder_id, created_by_user_id, label, view_count, is_active)
-      VALUES (?, ?, ?, ?, ?, ?, 0, 1)
-    `).run(id, token, file_id || null, folder_id || null, user.id, label || "Shared Asset");
+      INSERT INTO shared_links (id, token, file_id, folder_id, created_by_user_id, label, view_count, is_active, organization_id)
+      VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?)
+    `).run(id, token, file_id || null, folder_id || null, user.id, label || "Shared Asset", activeOrg.id);
 
-    const created = db.prepare("SELECT * FROM shared_links WHERE id = ?").get(id);
+    const created = db.prepare("SELECT * FROM shared_links WHERE id = ? AND organization_id = ?").get(id, activeOrg.id);
 
     return NextResponse.json({
       success: true,

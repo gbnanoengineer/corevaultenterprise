@@ -1,23 +1,26 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getActiveOrgContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getAssetBuffer, deleteAsset } from "@/lib/storage";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return new NextResponse("Unauthorized", { status: 401 });
+    }
+
+    const { user, activeOrg } = context;
     const { id } = await params;
-    const file = db.prepare("SELECT * FROM files WHERE id = ?").get(id) as any;
+    const file = db.prepare("SELECT * FROM files WHERE id = ? AND organization_id = ?").get(id, activeOrg.id) as any;
 
     if (!file) {
-      return new NextResponse("File not found", { status: 404 });
+      return new NextResponse("File not found or access denied in this organization", { status: 404 });
     }
 
     // Check permissions if private
-    if (file.is_private) {
-      const user = await getCurrentUser();
-      if (!user || user.id !== file.uploaded_by_user_id) {
-        return new NextResponse("Forbidden", { status: 403 });
-      }
+    if (file.is_private && user.id !== file.uploaded_by_user_id) {
+      return new NextResponse("Forbidden", { status: 403 });
     }
 
     const buffer = await getAssetBuffer(file.storage_path);
@@ -47,16 +50,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
 
+    const { activeOrg } = context;
     const { id } = await params;
-    const file = db.prepare("SELECT * FROM files WHERE id = ?").get(id) as any;
+    const file = db.prepare("SELECT * FROM files WHERE id = ? AND organization_id = ?").get(id, activeOrg.id) as any;
 
     if (!file) {
-      return NextResponse.json({ error: "File not found" }, { status: 404 });
+      return NextResponse.json({ error: "File not found or access denied in this organization" }, { status: 404 });
     }
 
     // ON-DELETE CLEANUP: Delete asset from Cloud Storage Bucket and local storage
@@ -68,7 +72,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     db.prepare("DELETE FROM shared_links WHERE file_id = ?").run(id);
 
     // Delete record from database
-    db.prepare("DELETE FROM files WHERE id = ?").run(id);
+    db.prepare("DELETE FROM files WHERE id = ? AND organization_id = ?").run(id, activeOrg.id);
 
     return NextResponse.json({ success: true, message: "File and bucket asset deleted successfully" });
   } catch (error) {

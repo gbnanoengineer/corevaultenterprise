@@ -270,6 +270,36 @@ export function initDatabase() {
   }
 
   try {
+    db.exec("ALTER TABLE settlements ADD COLUMN organization_id TEXT;");
+  } catch {
+    // column already exists
+  }
+
+  try {
+    db.exec("ALTER TABLE files ADD COLUMN organization_id TEXT;");
+  } catch {
+    // column already exists
+  }
+
+  try {
+    db.exec("ALTER TABLE shared_links ADD COLUMN organization_id TEXT;");
+  } catch {
+    // column already exists
+  }
+
+  try {
+    db.exec("CREATE INDEX IF NOT EXISTS idx_expenses_org ON expenses(organization_id);");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_incomes_org ON incomes(organization_id);");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_subscriptions_org ON subscriptions(organization_id);");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_settlements_org ON settlements(organization_id);");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_folders_org ON folders(organization_id);");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_files_org ON files(organization_id);");
+    db.exec("CREATE INDEX IF NOT EXISTS idx_shared_links_org ON shared_links(organization_id);");
+  } catch {
+    // indexes exist
+  }
+
+  try {
     db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);");
   } catch {
     // index already exists
@@ -288,6 +318,15 @@ export function initDatabase() {
   `);
   insertMember.run("mem_1", "org_default", "user_1", "owner");
   insertMember.run("mem_2", "org_default", "user_2", "member");
+
+  // Backfill existing legacy records without an organization to the default organization
+  db.prepare("UPDATE expenses SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
+  db.prepare("UPDATE incomes SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
+  db.prepare("UPDATE subscriptions SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
+  db.prepare("UPDATE settlements SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
+  db.prepare("UPDATE folders SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
+  db.prepare("UPDATE files SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
+  db.prepare("UPDATE shared_links SET organization_id = 'org_default' WHERE organization_id IS NULL").run();
 
   // Pre-hashed default password for initial seed users: 'password123'
   const defaultPasswordHash = bcrypt.hashSync("password123", 10);

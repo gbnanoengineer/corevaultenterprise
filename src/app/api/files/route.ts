@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getActiveOrgContext } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { compressAsset } from "@/lib/compression";
 import { saveAsset, purgeExpiredFiles } from "@/lib/storage";
@@ -8,10 +8,13 @@ import crypto from "crypto";
 
 export async function GET(req: Request) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
+
+    const { user, activeOrg } = context;
+    const orgId = activeOrg.id;
 
     // Auto-purge any files whose retention expiry period has lapsed
     await purgeExpiredFiles();
@@ -20,15 +23,15 @@ export async function GET(req: Request) {
     const folderId = searchParams.get("folderId");
     const search = searchParams.get("search");
 
-    // Fetch folders
+    // Fetch folders belonging strictly to active organization
     let folderQuery = `
       SELECT f.*, u.display_name as owner_name,
-             (SELECT COUNT(*) FROM files WHERE folder_id = f.id) as file_count
+             (SELECT COUNT(*) FROM files WHERE folder_id = f.id AND organization_id = ?) as file_count
       FROM folders f
       LEFT JOIN users u ON f.owner_user_id = u.id
-      WHERE (f.is_private = 0 OR f.owner_user_id = ?)
+      WHERE f.organization_id = ? AND (f.is_private = 0 OR f.owner_user_id = ?)
     `;
-    const folderParams: any[] = [user.id];
+    const folderParams: any[] = [orgId, orgId, user.id];
 
     if (folderId) {
       folderQuery += ` AND f.parent_id = ?`;
@@ -39,15 +42,15 @@ export async function GET(req: Request) {
 
     const folders = db.prepare(folderQuery).all(...folderParams);
 
-    // Fetch files (including expires_at)
+    // Fetch files belonging strictly to active organization
     let fileQuery = `
       SELECT f.*, u.display_name as uploaded_by_name,
              (SELECT token FROM shared_links WHERE file_id = f.id AND is_active = 1 LIMIT 1) as share_token
       FROM files f
       LEFT JOIN users u ON f.uploaded_by_user_id = u.id
-      WHERE (f.is_private = 0 OR f.uploaded_by_user_id = ?)
+      WHERE f.organization_id = ? AND (f.is_private = 0 OR f.uploaded_by_user_id = ?)
     `;
-    const fileParams: any[] = [user.id];
+    const fileParams: any[] = [orgId, user.id];
 
     if (search) {
       fileQuery += ` AND (f.name LIKE ? OR f.original_name LIKE ?)`;
@@ -67,12 +70,12 @@ export async function GET(req: Request) {
     let currentFolder = null;
     let breadcrumbs: any[] = [];
     if (folderId) {
-      currentFolder = db.prepare("SELECT * FROM folders WHERE id = ?").get(folderId) as any;
+      currentFolder = db.prepare("SELECT * FROM folders WHERE id = ? AND organization_id = ?").get(folderId, orgId) as any;
       if (currentFolder) {
         breadcrumbs.push({ id: currentFolder.id, name: currentFolder.name });
         let parentId = currentFolder.parent_id;
         while (parentId) {
-          const parent = db.prepare("SELECT id, name, parent_id FROM folders WHERE id = ?").get(parentId) as any;
+          const parent = db.prepare("SELECT id, name, parent_id FROM folders WHERE id = ? AND organization_id = ?").get(parentId, orgId) as any;
           if (parent) {
             breadcrumbs.unshift({ id: parent.id, name: parent.name });
             parentId = parent.parent_id;
@@ -97,27 +100,38 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const context = await getActiveOrgContext();
+    if (!context) {
+      return NextResponse.json({ error: "Unauthorized or no active organization" }, { status: 401 });
     }
+
+    const { user, activeOrg } = context;
+    const orgId = activeOrg.id;
 
     const formData = await req.formData();
     const uploadedFile = formData.get("file") as File | null;
     const folderId = (formData.get("folderId") as string) || null;
     const isPrivate = formData.get("isPrivate") === "true" || formData.get("isPrivate") === "1" ? 1 : 0;
-    const expiryDays = formData.get("expiryDays") as string | null; // "never", "1", "7", "30", "90"
+    const expiryDays = formData.get("expiryDays") as string | null;
     const customExpiryDate = formData.get("customExpiryDate") as string | null;
 
     if (!uploadedFile) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
+    // Verify folder belongs to active org if specified
+    if (folderId) {
+      const folderCheck = db.prepare("SELECT id FROM folders WHERE id = ? AND organization_id = ?").get(folderId, orgId);
+      if (!folderCheck) {
+        return NextResponse.json({ error: "Invalid target folder or access denied." }, { status: 403 });
+      }
+    }
+
     const originalName = uploadedFile.name;
     const rawMimeType = uploadedFile.type || "application/octet-stream";
     const extension = path.extname(originalName).toLowerCase();
 
-    // STRICT AUDIO RESTRICTION per requirement
+    // STRICT AUDIO RESTRICTION
     const audioExtensions = [".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".wma", ".opus"];
     if (rawMimeType.startsWith("audio/") || audioExtensions.includes(extension)) {
       return NextResponse.json(
@@ -140,7 +154,7 @@ export async function POST(req: Request) {
 
     const rawBuffer = Buffer.from(await uploadedFile.arrayBuffer());
 
-    // ASSET COMPRESSION PIPELINE: compress images with Sharp WebP, optimize payload
+    // ASSET COMPRESSION PIPELINE: compress images with Sharp WebP
     const compressed = await compressAsset(rawBuffer, originalName, rawMimeType);
 
     const fileId = "file_" + crypto.randomUUID().slice(0, 10);
@@ -150,8 +164,8 @@ export async function POST(req: Request) {
     const stored = await saveAsset(compressed.buffer, storageFileName, compressed.mimeType);
 
     db.prepare(`
-      INSERT INTO files (id, name, original_name, mime_type, file_size, storage_path, folder_id, uploaded_by_user_id, is_private, expires_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO files (id, name, original_name, mime_type, file_size, storage_path, folder_id, uploaded_by_user_id, is_private, expires_at, organization_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       fileId,
       compressed.fileName,
@@ -162,15 +176,16 @@ export async function POST(req: Request) {
       folderId,
       user.id,
       isPrivate,
-      expiresAt
+      expiresAt,
+      orgId
     );
 
     const created = db.prepare(`
       SELECT f.*, u.display_name as uploaded_by_name
       FROM files f
       LEFT JOIN users u ON f.uploaded_by_user_id = u.id
-      WHERE f.id = ?
-    `).get(fileId);
+      WHERE f.id = ? AND f.organization_id = ?
+    `).get(fileId, orgId);
 
     return NextResponse.json({
       success: true,
