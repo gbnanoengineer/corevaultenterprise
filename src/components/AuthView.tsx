@@ -10,42 +10,59 @@ import {
   CheckCircle2,
   AlertCircle,
   KeyRound,
-  Sparkles,
   Layers,
   Send,
-  ArrowLeft
+  ArrowLeft,
+  Building,
+  RotateCw,
+  Sparkles
 } from "lucide-react";
 
 interface AuthViewProps {
   orgName?: string;
-  onLoginSuccess: (user: any) => void;
+  onLoginSuccess: (user: any, activeOrg?: any) => void;
 }
 
-type AuthMode = "login" | "signup" | "forgot" | "reset";
+type AuthStep =
+  | "email_entry"          // Single email input step
+  | "login_password"       // Existing user: enter password
+  | "login_otp"            // Existing user: enter OTP to log in
+  | "signup_otp"           // New user: verify email with OTP
+  | "signup_details"       // New user: set name and password
+  | "reset_password_otp"   // Forgot password: enter OTP + new password
+  | "create_organization"; // Post-registration: create company/organization
 
 export default function AuthView({ orgName = "Acme Core Ventures", onLoginSuccess }: AuthViewProps) {
-  const [mode, setMode] = useState<AuthMode>("login");
+  const [step, setStep] = useState<AuthStep>("email_entry");
 
-  // Form states
-  const [name, setName] = useState("");
+  // Input states
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [resetToken, setResetToken] = useState("");
+  const [name, setName] = useState("");
+  const [otp, setOtp] = useState("");
 
+  // Organization creation state
+  const [newOrgName, setNewOrgName] = useState("");
+  const [newOrgCurrency, setNewOrgCurrency] = useState("USD");
+  const [registeredUser, setRegisteredUser] = useState<any>(null);
+
+  // Invite token if present in URL
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+
+  // Loading & feedback states
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-  const [debugToken, setDebugToken] = useState("");
+  const [debugOtp, setDebugOtp] = useState("");
 
-  // Check if URL has ?resetToken=...
+  // Check URL params on mount (?inviteToken=... or ?resetToken=...)
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
-      const tokenFromUrl = params.get("resetToken");
-      if (tokenFromUrl) {
-        setResetToken(tokenFromUrl);
-        setMode("reset");
+      const token = params.get("inviteToken");
+      if (token) {
+        setInviteToken(token);
       }
     }
   }, []);
@@ -53,16 +70,60 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
   const clearMessages = () => {
     setError("");
     setSuccessMessage("");
-    setDebugToken("");
+    setDebugOtp("");
   };
 
-  // 1. Sign In (Login)
-  const handleLogin = async (e: React.FormEvent) => {
+  // STEP 1: Single unified email submit
+  const handleEmailContinue = async (e: React.FormEvent) => {
     e.preventDefault();
     clearMessages();
 
-    if (!email || !password) {
-      setError("Please provide both your email and password.");
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/check-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: cleanEmail }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to check email.");
+        return;
+      }
+
+      if (data.exists) {
+        // Existing user -> Move to password login
+        setStep("login_password");
+      } else {
+        // New user -> OTP was dispatched by check-email route
+        setStep("signup_otp");
+        setSuccessMessage(`We sent a 6-digit verification code to ${cleanEmail} via Resend.`);
+        if (data.debugOtp) {
+          setDebugOtp(data.debugOtp);
+          setOtp(data.debugOtp);
+        }
+      }
+    } catch {
+      setError("Network or server connection error. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Login with Password
+  const handlePasswordLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearMessages();
+
+    if (!password) {
+      setError("Please enter your password.");
       return;
     }
 
@@ -76,34 +137,152 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
 
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Invalid email or password.");
+        setError(data.error || "Incorrect password.");
       } else {
-        onLoginSuccess(data.user);
+        if (inviteToken) {
+          // Auto-accept invitation if logged in via invite link
+          await fetch("/api/organizations/accept-invite", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: inviteToken }),
+          });
+        }
+
+        if (data.needsOrgCreation) {
+          setRegisteredUser(data.user);
+          setStep("create_organization");
+        } else {
+          onLoginSuccess(data.user, data.activeOrganization);
+        }
       }
     } catch {
-      setError("Network or server connection error. Please try again.");
+      setError("Network error during login.");
     } finally {
       setLoading(false);
     }
   };
 
-  // 2. Sign Up (Create Account)
-  const handleSignup = async (e: React.FormEvent) => {
+  // Request OTP for Signup, Login, or Reset Password
+  const handleRequestOtp = async (purpose: "signup" | "login" | "reset_password") => {
+    clearMessages();
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/auth/otp/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), purpose }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to send verification code.");
+      } else {
+        setSuccessMessage(data.message || `Code sent to ${email}.`);
+        if (data.debugOtp) {
+          setDebugOtp(data.debugOtp);
+          setOtp(data.debugOtp);
+        }
+        if (purpose === "login") {
+          setStep("login_otp");
+        } else {
+          setStep("reset_password_otp");
+        }
+      }
+    } catch {
+      setError("Network error sending code.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Submit OTP for Login (Passwordless)
+  const handleOtpLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     clearMessages();
 
-    if (!name || !email || !password) {
-      setError("Please fill in all required fields.");
+    if (!otp || otp.length !== 6) {
+      setError("Please enter the 6-digit verification code.");
       return;
     }
 
-    if (password.length < 6) {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/otp/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), otp: otp.trim() }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Invalid verification code.");
+      } else {
+        if (inviteToken) {
+          await fetch("/api/organizations/accept-invite", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: inviteToken }),
+          });
+        }
+        onLoginSuccess(data.user);
+      }
+    } catch {
+      setError("Network error during verification.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Verify Signup OTP
+  const handleVerifySignupOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearMessages();
+
+    if (!otp || otp.length !== 6) {
+      setError("Please enter the 6-digit verification code.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/otp/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), otp: otp.trim(), purpose: "signup" }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.valid) {
+        setError(data.error || "Invalid or expired verification code.");
+      } else {
+        setSuccessMessage("Email verified! Please enter your name and choose a password.");
+        setStep("signup_details");
+      }
+    } catch {
+      setError("Network error verifying code.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Complete Registration with Name & Password
+  const handleCompleteSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearMessages();
+
+    if (!name.trim()) {
+      setError("Please enter your name.");
+      return;
+    }
+
+    if (!password || password.length < 6) {
       setError("Password must be at least 6 characters long.");
       return;
     }
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match. Please re-enter.");
+      setError("Passwords do not match.");
       return;
     }
 
@@ -112,68 +291,44 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), email: email.trim(), password }),
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim(),
+          password,
+          otp: otp.trim(),
+          inviteToken: inviteToken || undefined,
+        }),
       });
 
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Registration failed.");
       } else {
-        onLoginSuccess(data.user);
-      }
-    } catch {
-      setError("Network or server connection error. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 3. Forgot Password (Dispatches Resend Email)
-  const handleForgotPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    clearMessages();
-
-    if (!email || !email.includes("@")) {
-      setError("Please enter a valid email address.");
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const res = await fetch("/api/auth/forgot-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Failed to process reset request.");
-      } else {
-        setSuccessMessage(data.message || "Password reset email sent! Check your inbox.");
-        if (data.debugToken) {
-          setDebugToken(data.debugToken);
-          setResetToken(data.debugToken);
+        if (data.needsOrgCreation) {
+          setRegisteredUser(data.user);
+          setStep("create_organization");
+        } else {
+          onLoginSuccess(data.user);
         }
       }
     } catch {
-      setError("Network or server connection error. Please try again.");
+      setError("Network error completing registration.");
     } finally {
       setLoading(false);
     }
   };
 
-  // 4. Reset Password with Token
-  const handleResetPassword = async (e: React.FormEvent) => {
+  // Reset Password using OTP
+  const handleResetPasswordOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     clearMessages();
 
-    if (!resetToken) {
-      setError("Please enter your password reset token.");
+    if (!otp || otp.length !== 6) {
+      setError("Please enter the 6-digit verification code.");
       return;
     }
 
-    if (password.length < 6) {
+    if (!password || password.length < 6) {
       setError("New password must be at least 6 characters long.");
       return;
     }
@@ -185,27 +340,61 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
 
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/reset-password", {
+      const res = await fetch("/api/auth/otp/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: resetToken.trim(), password }),
+        body: JSON.stringify({ email: email.trim(), otp: otp.trim(), password }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Failed to reset password. Token may be expired.");
+        setError(data.error || "Failed to reset password.");
       } else {
-        setSuccessMessage("Password reset successfully! You can now log in with your new password.");
+        setSuccessMessage("Password reset successfully! Please sign in with your new password.");
         setPassword("");
         setConfirmPassword("");
-        setResetToken("");
+        setOtp("");
         setTimeout(() => {
-          setMode("login");
+          setStep("login_password");
           clearMessages();
-        }, 2000);
+        }, 1500);
       }
     } catch {
-      setError("Network or server connection error. Please try again.");
+      setError("Network error updating password.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Create Organization (Post-Registration)
+  const handleCreateOrg = async (e: React.FormEvent) => {
+    e.preventDefault();
+    clearMessages();
+
+    if (!newOrgName.trim()) {
+      setError("Please provide an organization name.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/organizations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newOrgName.trim(),
+          currency: newOrgCurrency,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Failed to create organization.");
+      } else {
+        onLoginSuccess(registeredUser, data.organization);
+      }
+    } catch {
+      setError("Network error creating organization.");
     } finally {
       setLoading(false);
     }
@@ -223,7 +412,7 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
       position: "relative",
       overflow: "hidden"
     }}>
-      {/* Ambient background glow accents */}
+      {/* Glow ambient background */}
       <div style={{
         position: "absolute",
         top: "-15%",
@@ -241,8 +430,8 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
         position: "relative",
         zIndex: 10,
         width: "100%",
-        maxWidth: 440,
-        background: "rgba(15, 23, 42, 0.8)",
+        maxWidth: 450,
+        background: "rgba(15, 23, 42, 0.82)",
         backdropFilter: "blur(24px)",
         border: "1px solid rgba(255, 255, 255, 0.1)",
         borderRadius: 20,
@@ -268,69 +457,37 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
           <h1 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", margin: "0 0 6px 0" }}>
             ExpenseTracker <span style={{ color: "#818cf8" }}>Vault</span>
           </h1>
-          <p style={{ fontSize: "0.86rem", color: "var(--text-secondary)", margin: 0 }}>
-            {orgName} &bull; Secure Financial Operations
+          <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: 0 }}>
+            Unified Authentication & Organization Vault
           </p>
+
+          {inviteToken && (
+            <div style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              background: "rgba(16, 185, 129, 0.15)",
+              color: "#34d399",
+              border: "1px solid rgba(16, 185, 129, 0.3)",
+              padding: "4px 10px",
+              borderRadius: 20,
+              fontSize: "0.74rem",
+              fontWeight: 600,
+              marginTop: 10
+            }}>
+              <Sparkles size={13} />
+              <span>Team Invitation Attached</span>
+            </div>
+          )}
         </div>
 
-        {/* Mode Navigation Tabs (Login vs Signup) */}
-        {(mode === "login" || mode === "signup") && (
-          <div style={{
-            display: "flex",
-            background: "rgba(255, 255, 255, 0.04)",
-            padding: 4,
-            borderRadius: 12,
-            border: "1px solid rgba(255, 255, 255, 0.06)",
-            marginBottom: 24
-          }}>
+        {/* Back navigation button when inside sub-steps */}
+        {step !== "email_entry" && step !== "create_organization" && (
+          <div style={{ marginBottom: 18 }}>
             <button
-              id="tab-auth-login"
+              id="btn-back-step"
               type="button"
-              onClick={() => { setMode("login"); clearMessages(); }}
-              style={{
-                flex: 1,
-                padding: "9px 0",
-                fontSize: "0.88rem",
-                fontWeight: mode === "login" ? 700 : 500,
-                color: mode === "login" ? "#ffffff" : "var(--text-secondary)",
-                background: mode === "login" ? "rgba(99, 102, 241, 0.3)" : "transparent",
-                border: mode === "login" ? "1px solid rgba(99, 102, 241, 0.4)" : "1px solid transparent",
-                borderRadius: 9,
-                cursor: "pointer",
-                transition: "all 0.15s ease"
-              }}
-            >
-              Sign In
-            </button>
-            <button
-              id="tab-auth-signup"
-              type="button"
-              onClick={() => { setMode("signup"); clearMessages(); }}
-              style={{
-                flex: 1,
-                padding: "9px 0",
-                fontSize: "0.88rem",
-                fontWeight: mode === "signup" ? 700 : 500,
-                color: mode === "signup" ? "#ffffff" : "var(--text-secondary)",
-                background: mode === "signup" ? "rgba(99, 102, 241, 0.3)" : "transparent",
-                border: mode === "signup" ? "1px solid rgba(99, 102, 241, 0.4)" : "1px solid transparent",
-                borderRadius: 9,
-                cursor: "pointer",
-                transition: "all 0.15s ease"
-              }}
-            >
-              Create Account
-            </button>
-          </div>
-        )}
-
-        {/* Back navigation for forgot/reset modes */}
-        {(mode === "forgot" || mode === "reset") && (
-          <div style={{ marginBottom: 20 }}>
-            <button
-              id="btn-back-to-login"
-              type="button"
-              onClick={() => { setMode("login"); clearMessages(); }}
+              onClick={() => { setStep("email_entry"); clearMessages(); }}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -338,14 +495,14 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
                 background: "transparent",
                 border: "none",
                 color: "#818cf8",
-                fontSize: "0.84rem",
+                fontSize: "0.82rem",
                 fontWeight: 600,
                 cursor: "pointer",
                 padding: 0
               }}
             >
               <ArrowLeft size={16} />
-              <span>Back to Sign In</span>
+              <span>Change Email ({email})</span>
             </button>
           </div>
         )}
@@ -387,8 +544,8 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
           </div>
         )}
 
-        {/* Debug Token banner if in dev or testing */}
-        {debugToken && (
+        {/* Debug OTP Banner (development mode) */}
+        {debugOtp && (
           <div style={{
             padding: "12px 14px",
             background: "rgba(56, 189, 248, 0.1)",
@@ -398,42 +555,24 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
             color: "#38bdf8",
             marginBottom: 20
           }}>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>Reset Token generated:</div>
-            <code style={{ fontSize: "0.78rem", wordBreak: "break-all", background: "rgba(0,0,0,0.3)", padding: "2px 6px", borderRadius: 4 }}>
-              {debugToken}
+            <div style={{ fontWeight: 600, marginBottom: 2 }}>Verification Code (Resend OTP):</div>
+            <code style={{ fontSize: "1.1rem", letterSpacing: "0.15em", fontWeight: 800 }}>
+              {debugOtp}
             </code>
-            <div style={{ marginTop: 8 }}>
-              <button
-                type="button"
-                onClick={() => { setMode("reset"); setResetToken(debugToken); }}
-                style={{
-                  background: "#38bdf8",
-                  color: "#0f172a",
-                  border: "none",
-                  borderRadius: 6,
-                  padding: "4px 10px",
-                  fontSize: "0.76rem",
-                  fontWeight: 700,
-                  cursor: "pointer"
-                }}
-              >
-                Auto-fill & Reset Now &rarr;
-              </button>
-            </div>
           </div>
         )}
 
-        {/* -------------------- VIEW 1: SIGN IN -------------------- */}
-        {mode === "login" && (
-          <form onSubmit={handleLogin} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        {/* -------------------- STEP 1: SINGLE EMAIL ENTRY -------------------- */}
+        {step === "email_entry" && (
+          <form onSubmit={handleEmailContinue} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             <div>
-              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+              <label style={{ display: "block", fontSize: "0.84rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
                 Email Address
               </label>
               <div style={{ position: "relative" }}>
-                <Mail size={17} color="#64748b" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
+                <Mail size={18} color="#64748b" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
                 <input
-                  id="input-auth-email"
+                  id="input-auth-unified-email"
                   type="email"
                   autoComplete="email"
                   required
@@ -442,39 +581,67 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
                   onChange={(e) => setEmail(e.target.value)}
                   style={{
                     width: "100%",
-                    padding: "12px 14px 12px 42px",
+                    padding: "13px 14px 13px 44px",
                     background: "rgba(255, 255, 255, 0.04)",
                     border: "1px solid var(--border-subtle)",
                     borderRadius: 10,
                     color: "#ffffff",
-                    fontSize: "0.92rem",
+                    fontSize: "0.95rem",
                     outline: "none"
                   }}
                 />
               </div>
+              <p style={{ fontSize: "0.76rem", color: "var(--text-muted)", marginTop: 6, margin: "6px 0 0 0" }}>
+                Enter your email to sign in or create an account. New users verify via 6-digit OTP.
+              </p>
             </div>
 
+            <button
+              id="btn-auth-email-continue"
+              type="submit"
+              disabled={loading}
+              className="btn-primary"
+              style={{
+                width: "100%",
+                padding: "13px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                fontSize: "0.95rem",
+                fontWeight: 700,
+                marginTop: 4
+              }}
+            >
+              {loading ? "Checking..." : "Continue with Email"}
+              {!loading && <ArrowRight size={17} />}
+            </button>
+
+            {/* Default account hint */}
+            <div style={{
+              marginTop: 10,
+              padding: "10px 12px",
+              background: "rgba(255, 255, 255, 0.02)",
+              border: "1px solid rgba(255, 255, 255, 0.06)",
+              borderRadius: 8,
+              fontSize: "0.74rem",
+              color: "var(--text-muted)",
+              textAlign: "center"
+            }}>
+              <span>Existing account: </span>
+              <strong style={{ color: "#94a3b8" }}>gaurav@acme.com</strong> (Pass: <code style={{ color: "#818cf8" }}>password123</code>)
+            </div>
+          </form>
+        )}
+
+        {/* -------------------- STEP 2A: EXISTING USER -> PASSWORD LOGIN -------------------- */}
+        {step === "login_password" && (
+          <form onSubmit={handlePasswordLogin} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                 <label style={{ fontSize: "0.82rem", fontWeight: 600, color: "var(--text-secondary)" }}>
-                  Password
+                  Password for {email}
                 </label>
-                <button
-                  id="btn-forgot-password-link"
-                  type="button"
-                  onClick={() => { setMode("forgot"); clearMessages(); }}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: "#818cf8",
-                    fontSize: "0.78rem",
-                    fontWeight: 500,
-                    cursor: "pointer",
-                    padding: 0
-                  }}
-                >
-                  Forgot password?
-                </button>
               </div>
               <div style={{ position: "relative" }}>
                 <Lock size={17} color="#64748b" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
@@ -483,7 +650,8 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
                   type="password"
                   autoComplete="current-password"
                   required
-                  placeholder="&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;"
+                  autoFocus
+                  placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   style={{
@@ -501,7 +669,7 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
             </div>
 
             <button
-              id="btn-auth-submit-login"
+              id="btn-auth-submit-password"
               type="submit"
               disabled={loading}
               className="btn-primary"
@@ -513,35 +681,221 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
                 justifyContent: "center",
                 gap: 8,
                 fontSize: "0.95rem",
-                fontWeight: 700,
-                marginTop: 6
+                fontWeight: 700
               }}
             >
               {loading ? "Authenticating..." : "Sign In to Vault"}
               {!loading && <ArrowRight size={17} />}
             </button>
 
-            {/* Quick credentials hint */}
+            {/* Alternative options: OTP login & Forgot Password */}
             <div style={{
-              marginTop: 10,
-              padding: "10px 12px",
-              background: "rgba(255, 255, 255, 0.02)",
-              border: "1px solid rgba(255, 255, 255, 0.06)",
-              borderRadius: 8,
-              fontSize: "0.74rem",
-              color: "var(--text-muted)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+              paddingTop: 12,
+              borderTop: "1px solid rgba(255, 255, 255, 0.06)",
               textAlign: "center"
             }}>
-              <span>Default accounts: </span>
-              <strong style={{ color: "#94a3b8" }}>gaurav@acme.com</strong> or{" "}
-              <strong style={{ color: "#94a3b8" }}>partner@acme.com</strong> (Pass: <code style={{ color: "#818cf8" }}>password123</code>)
+              <button
+                id="btn-switch-login-otp"
+                type="button"
+                onClick={() => handleRequestOtp("login")}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#38bdf8",
+                  fontSize: "0.82rem",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 6
+                }}
+              >
+                <KeyRound size={14} />
+                <span>Sign in with 6-Digit OTP Code instead</span>
+              </button>
+
+              <button
+                id="btn-switch-forgot-password"
+                type="button"
+                onClick={() => handleRequestOtp("reset_password")}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#94a3b8",
+                  fontSize: "0.78rem",
+                  cursor: "pointer",
+                  textDecoration: "underline"
+                }}
+              >
+                Forgot password? Reset using OTP
+              </button>
             </div>
           </form>
         )}
 
-        {/* -------------------- VIEW 2: CREATE ACCOUNT (SIGN UP) -------------------- */}
-        {mode === "signup" && (
-          <form onSubmit={handleSignup} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* -------------------- STEP 2B: EXISTING USER -> OTP LOGIN -------------------- */}
+        {step === "login_otp" && (
+          <form onSubmit={handleOtpLogin} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <div style={{ textAlign: "center" }}>
+              <KeyRound size={26} color="#38bdf8" style={{ margin: "0 auto 8px auto" }} />
+              <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#ffffff", margin: "0 0 4px 0" }}>
+                Enter Login Code
+              </h2>
+              <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", margin: 0 }}>
+                We sent a 6-digit code via Resend to <strong>{email}</strong>
+              </p>
+            </div>
+
+            <div>
+              <input
+                id="input-auth-login-otp"
+                type="text"
+                maxLength={6}
+                autoFocus
+                placeholder="000000"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, ""))}
+                style={{
+                  width: "100%",
+                  padding: "14px",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  border: "1.5px solid rgba(99, 102, 241, 0.4)",
+                  borderRadius: 12,
+                  color: "#38bdf8",
+                  fontSize: "1.8rem",
+                  fontWeight: 800,
+                  letterSpacing: "0.25em",
+                  textAlign: "center",
+                  outline: "none"
+                }}
+              />
+            </div>
+
+            <button
+              id="btn-auth-submit-otp-login"
+              type="submit"
+              disabled={loading || otp.length !== 6}
+              className="btn-primary"
+              style={{
+                width: "100%",
+                padding: "13px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                fontSize: "0.95rem",
+                fontWeight: 700
+              }}
+            >
+              {loading ? "Verifying..." : "Verify & Sign In"}
+              {!loading && <ArrowRight size={17} />}
+            </button>
+
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem" }}>
+              <button
+                type="button"
+                onClick={() => setStep("login_password")}
+                style={{ background: "transparent", border: "none", color: "#818cf8", cursor: "pointer" }}
+              >
+                Use Password instead
+              </button>
+              <button
+                type="button"
+                onClick={() => handleRequestOtp("login")}
+                style={{ background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}
+              >
+                <RotateCw size={13} /> Resend Code
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* -------------------- STEP 3: NEW USER -> VERIFY SIGNUP OTP -------------------- */}
+        {step === "signup_otp" && (
+          <form onSubmit={handleVerifySignupOtp} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <div style={{ textAlign: "center" }}>
+              <ShieldCheck size={26} color="#34d399" style={{ margin: "0 auto 8px auto" }} />
+              <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#ffffff", margin: "0 0 4px 0" }}>
+                Verify Your Email
+              </h2>
+              <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", margin: 0 }}>
+                We sent a 6-digit verification code to <strong>{email}</strong>
+              </p>
+            </div>
+
+            <div>
+              <input
+                id="input-auth-signup-otp"
+                type="text"
+                maxLength={6}
+                autoFocus
+                placeholder="000000"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, ""))}
+                style={{
+                  width: "100%",
+                  padding: "14px",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  border: "1.5px solid rgba(16, 185, 129, 0.4)",
+                  borderRadius: 12,
+                  color: "#34d399",
+                  fontSize: "1.8rem",
+                  fontWeight: 800,
+                  letterSpacing: "0.25em",
+                  textAlign: "center",
+                  outline: "none"
+                }}
+              />
+            </div>
+
+            <button
+              id="btn-auth-verify-signup-otp"
+              type="submit"
+              disabled={loading || otp.length !== 6}
+              className="btn-primary"
+              style={{
+                width: "100%",
+                padding: "13px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                fontSize: "0.95rem",
+                fontWeight: 700
+              }}
+            >
+              {loading ? "Verifying..." : "Verify Code & Continue"}
+              {!loading && <ArrowRight size={17} />}
+            </button>
+
+            <div style={{ textAlign: "center" }}>
+              <button
+                type="button"
+                onClick={() => handleRequestOtp("signup")}
+                style={{ background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: "0.8rem", display: "inline-flex", alignItems: "center", gap: 4 }}
+              >
+                <RotateCw size={13} /> Resend verification code
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* -------------------- STEP 4: NEW USER -> SET NAME & PASSWORD -------------------- */}
+        {step === "signup_details" && (
+          <form onSubmit={handleCompleteSignup} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div>
+              <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#ffffff", margin: "0 0 4px 0" }}>
+                Create Your Account
+              </h2>
+              <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", margin: 0 }}>
+                Email <strong>{email}</strong> verified! Finish setting up your credentials.
+              </p>
+            </div>
+
             <div>
               <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
                 Full Name
@@ -552,6 +906,7 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
                   id="input-auth-name"
                   type="text"
                   required
+                  autoFocus
                   placeholder="Gaurav Sharma"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -571,35 +926,7 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
 
             <div>
               <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                Email Address
-              </label>
-              <div style={{ position: "relative" }}>
-                <Mail size={17} color="#64748b" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
-                <input
-                  id="input-auth-signup-email"
-                  type="email"
-                  autoComplete="email"
-                  required
-                  placeholder="gaurav@acme.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "12px 14px 12px 42px",
-                    background: "rgba(255, 255, 255, 0.04)",
-                    border: "1px solid var(--border-subtle)",
-                    borderRadius: 10,
-                    color: "#ffffff",
-                    fontSize: "0.92rem",
-                    outline: "none"
-                  }}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                Password (min 6 characters)
+                Create Password (min 6 characters)
               </label>
               <div style={{ position: "relative" }}>
                 <Lock size={17} color="#64748b" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
@@ -607,7 +934,7 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
                   id="input-auth-signup-password"
                   type="password"
                   required
-                  placeholder="Create a strong password"
+                  placeholder="Choose a strong password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   style={{
@@ -634,7 +961,7 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
                   id="input-auth-signup-confirm-password"
                   type="password"
                   required
-                  placeholder="Re-enter your password"
+                  placeholder="Re-enter password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   style={{
@@ -652,7 +979,7 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
             </div>
 
             <button
-              id="btn-auth-submit-signup"
+              id="btn-auth-complete-registration"
               type="submit"
               disabled={loading}
               className="btn-primary"
@@ -674,135 +1001,54 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
           </form>
         )}
 
-        {/* -------------------- VIEW 3: FORGOT PASSWORD (RESEND) -------------------- */}
-        {mode === "forgot" && (
-          <form onSubmit={handleForgotPassword} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        {/* -------------------- STEP 5: RESET PASSWORD USING OTP -------------------- */}
+        {step === "reset_password_otp" && (
+          <form onSubmit={handleResetPasswordOtp} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <KeyRound size={20} color="#818cf8" />
-                <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#ffffff", margin: 0 }}>
-                  Reset Your Password
-                </h2>
-              </div>
-              <p style={{ fontSize: "0.84rem", color: "var(--text-secondary)", margin: "0 0 16px 0", lineHeight: 1.5 }}>
-                Enter the email address tied to your account. We will send a secure password reset link via <strong>Resend</strong>.
+              <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#ffffff", margin: "0 0 4px 0" }}>
+                Reset Your Password
+              </h2>
+              <p style={{ fontSize: "0.82rem", color: "var(--text-secondary)", margin: 0 }}>
+                Enter the 6-digit code sent to <strong>{email}</strong> and pick a new password.
               </p>
-
-              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                Account Email Address
-              </label>
-              <div style={{ position: "relative" }}>
-                <Mail size={17} color="#64748b" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
-                <input
-                  id="input-auth-forgot-email"
-                  type="email"
-                  required
-                  placeholder="your-email@company.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "12px 14px 12px 42px",
-                    background: "rgba(255, 255, 255, 0.04)",
-                    border: "1px solid var(--border-subtle)",
-                    borderRadius: 10,
-                    color: "#ffffff",
-                    fontSize: "0.92rem",
-                    outline: "none"
-                  }}
-                />
-              </div>
             </div>
 
-            <button
-              id="btn-auth-send-reset-link"
-              type="submit"
-              disabled={loading}
-              className="btn-primary"
-              style={{
-                width: "100%",
-                padding: "13px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                fontSize: "0.95rem",
-                fontWeight: 700
-              }}
-            >
-              {loading ? "Dispatching Email..." : "Send Reset Link via Resend"}
-              {!loading && <Send size={16} />}
-            </button>
-
-            <div style={{ textAlign: "center", marginTop: 4 }}>
-              <button
-                id="btn-have-token"
-                type="button"
-                onClick={() => { setMode("reset"); clearMessages(); }}
+            <div>
+              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                6-Digit Verification Code
+              </label>
+              <input
+                id="input-auth-reset-otp"
+                type="text"
+                maxLength={6}
+                autoFocus
+                placeholder="000000"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, ""))}
                 style={{
-                  background: "transparent",
-                  border: "none",
-                  color: "#94a3b8",
-                  fontSize: "0.82rem",
-                  cursor: "pointer",
-                  textDecoration: "underline"
+                  width: "100%",
+                  padding: "12px",
+                  background: "rgba(255, 255, 255, 0.05)",
+                  border: "1.5px solid rgba(56, 189, 248, 0.4)",
+                  borderRadius: 10,
+                  color: "#38bdf8",
+                  fontSize: "1.4rem",
+                  fontWeight: 800,
+                  letterSpacing: "0.2em",
+                  textAlign: "center",
+                  outline: "none"
                 }}
-              >
-                Already have a reset token? Enter it here &rarr;
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* -------------------- VIEW 4: RESET PASSWORD WITH TOKEN -------------------- */}
-        {mode === "reset" && (
-          <form onSubmit={handleResetPassword} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <ShieldCheck size={20} color="#34d399" />
-                <h2 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#ffffff", margin: 0 }}>
-                  Enter New Password
-                </h2>
-              </div>
-              <p style={{ fontSize: "0.84rem", color: "var(--text-secondary)", margin: "0 0 16px 0", lineHeight: 1.5 }}>
-                Paste the reset token received in your email and choose a new password.
-              </p>
-
-              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                Reset Token
-              </label>
-              <div style={{ position: "relative" }}>
-                <KeyRound size={17} color="#64748b" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
-                <input
-                  id="input-auth-reset-token"
-                  type="text"
-                  required
-                  placeholder="Paste token here"
-                  value={resetToken}
-                  onChange={(e) => setResetToken(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "12px 14px 12px 42px",
-                    background: "rgba(255, 255, 255, 0.04)",
-                    border: "1px solid var(--border-subtle)",
-                    borderRadius: 10,
-                    color: "#ffffff",
-                    fontSize: "0.88rem",
-                    fontFamily: "monospace",
-                    outline: "none"
-                  }}
-                />
-              </div>
+              />
             </div>
 
             <div>
               <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
-                New Password (min 6 characters)
+                New Password (min 6 chars)
               </label>
               <div style={{ position: "relative" }}>
                 <Lock size={17} color="#64748b" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
                 <input
-                  id="input-auth-reset-password"
+                  id="input-auth-new-password"
                   type="password"
                   required
                   placeholder="New secure password"
@@ -829,7 +1075,7 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
               <div style={{ position: "relative" }}>
                 <Lock size={17} color="#64748b" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
                 <input
-                  id="input-auth-reset-confirm-password"
+                  id="input-auth-new-confirm-password"
                   type="password"
                   required
                   placeholder="Re-enter new password"
@@ -852,6 +1098,100 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
             <button
               id="btn-auth-submit-reset-password"
               type="submit"
+              disabled={loading || otp.length !== 6}
+              className="btn-primary"
+              style={{
+                width: "100%",
+                padding: "13px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                fontSize: "0.95rem",
+                fontWeight: 700,
+                marginTop: 6
+              }}
+            >
+              {loading ? "Updating..." : "Update Password & Sign In"}
+              {!loading && <CheckCircle2 size={17} />}
+            </button>
+          </form>
+        )}
+
+        {/* -------------------- STEP 6: CREATE FIRST ORGANIZATION (POST-REGISTER) -------------------- */}
+        {step === "create_organization" && (
+          <form onSubmit={handleCreateOrg} style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            <div style={{ textAlign: "center" }}>
+              <Building size={32} color="#818cf8" style={{ margin: "0 auto 8px auto" }} />
+              <h2 style={{ fontSize: "1.2rem", fontWeight: 800, color: "#ffffff", margin: "0 0 6px 0" }}>
+                Create Your Organization
+              </h2>
+              <p style={{ fontSize: "0.84rem", color: "var(--text-secondary)", margin: 0, lineHeight: 1.5 }}>
+                Your account is verified! Name your workspace to start tracking expenses, vault files, and invite members.
+              </p>
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                Organization / Company Name
+              </label>
+              <div style={{ position: "relative" }}>
+                <Building size={17} color="#64748b" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
+                <input
+                  id="input-create-org-name"
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="e.g. Apex Ventures, Blue Horizon LLC"
+                  value={newOrgName}
+                  onChange={(e) => setNewOrgName(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "12px 14px 12px 42px",
+                    background: "rgba(255, 255, 255, 0.04)",
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: 10,
+                    color: "#ffffff",
+                    fontSize: "0.92rem",
+                    outline: "none"
+                  }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 6 }}>
+                Default Currency
+              </label>
+              <select
+                id="select-create-org-currency"
+                value={newOrgCurrency}
+                onChange={(e) => setNewOrgCurrency(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  background: "rgba(255, 255, 255, 0.04)",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: 10,
+                  color: "#ffffff",
+                  fontSize: "0.92rem",
+                  outline: "none"
+                }}
+              >
+                <option value="USD">USD ($)</option>
+                <option value="EUR">EUR (€)</option>
+                <option value="GBP">GBP (£)</option>
+                <option value="CAD">CAD (C$)</option>
+                <option value="AUD">AUD (A$)</option>
+                <option value="INR">INR (₹)</option>
+                <option value="SGD">SGD (S$)</option>
+                <option value="JPY">JPY (¥)</option>
+              </select>
+            </div>
+
+            <button
+              id="btn-submit-create-org"
+              type="submit"
               disabled={loading}
               className="btn-primary"
               style={{
@@ -866,8 +1206,8 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
                 marginTop: 6
               }}
             >
-              {loading ? "Updating Password..." : "Set New Password"}
-              {!loading && <CheckCircle2 size={17} />}
+              {loading ? "Creating Organization..." : "Launch Organization Vault"}
+              {!loading && <ArrowRight size={17} />}
             </button>
           </form>
         )}
@@ -885,7 +1225,7 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
           fontSize: "0.74rem"
         }}>
           <ShieldCheck size={14} color="#10b981" />
-          <span>Bcrypt Encryption &bull; Resend Auth &bull; Session Cookies</span>
+          <span>Resend OTP Engine &bull; Multi-Org Collaboration &bull; Secure Cookies</span>
         </div>
       </div>
     </div>

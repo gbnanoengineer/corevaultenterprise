@@ -1,18 +1,35 @@
 import { NextResponse } from "next/server";
-import { getCurrentUser, authenticateWithPassword, setSessionCookie, clearSessionCookie } from "@/lib/auth";
-import { db } from "@/lib/db";
+import {
+  getCurrentUser,
+  authenticateWithPassword,
+  setSessionCookie,
+  clearSessionCookie,
+  getUserOrganizations,
+  getActiveOrganization,
+} from "@/lib/auth";
 
 export async function GET() {
   try {
     const user = await getCurrentUser();
-    const systemSetting = db.prepare("SELECT value FROM system_settings WHERE key = 'org_name'").get() as { value: string } | undefined;
-    const currencySetting = db.prepare("SELECT value FROM system_settings WHERE key = 'default_currency'").get() as { value: string } | undefined;
+    if (!user) {
+      return NextResponse.json({
+        authenticated: false,
+        user: null,
+        organizations: [],
+        activeOrganization: null,
+      });
+    }
+
+    const organizations = getUserOrganizations(user.id);
+    const activeOrganization = getActiveOrganization(user.id);
 
     return NextResponse.json({
-      authenticated: !!user,
+      authenticated: true,
       user,
-      orgName: systemSetting?.value || "Acme Core Ventures",
-      currency: currencySetting?.value || "USD",
+      organizations,
+      activeOrganization,
+      orgName: activeOrganization?.name || "My Organization",
+      currency: activeOrganization?.currency || "USD",
     });
   } catch (error) {
     console.error("Auth GET error:", error);
@@ -36,7 +53,16 @@ export async function POST(req: Request) {
 
     await setSessionCookie(user.id);
 
-    return NextResponse.json({ success: true, user });
+    const organizations = getUserOrganizations(user.id);
+    const activeOrganization = getActiveOrganization(user.id);
+
+    return NextResponse.json({
+      success: true,
+      user,
+      organizations,
+      activeOrganization,
+      needsOrgCreation: organizations.length === 0,
+    });
   } catch (error) {
     console.error("Auth Login POST error:", error);
     return NextResponse.json({ error: "Login failed" }, { status: 500 });

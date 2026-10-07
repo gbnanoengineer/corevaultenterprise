@@ -64,6 +64,50 @@ export function initDatabase() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS email_otps (
+      id TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      otp TEXT NOT NULL,
+      purpose TEXT NOT NULL,
+      expires_at DATETIME NOT NULL,
+      used INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS organizations (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      currency TEXT NOT NULL DEFAULT 'USD',
+      created_by_user_id TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS organization_members (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'member',
+      joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(organization_id, user_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS organization_invitations (
+      id TEXT PRIMARY KEY,
+      organization_id TEXT NOT NULL,
+      inviter_user_id TEXT NOT NULL,
+      invitee_email TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'member',
+      token TEXT UNIQUE NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      expires_at DATETIME NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+      FOREIGN KEY (inviter_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS folders (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -196,10 +240,54 @@ export function initDatabase() {
   }
 
   try {
+    db.exec("ALTER TABLE users ADD COLUMN active_organization_id TEXT;");
+  } catch {
+    // column already exists
+  }
+
+  try {
+    db.exec("ALTER TABLE expenses ADD COLUMN organization_id TEXT;");
+  } catch {
+    // column already exists
+  }
+
+  try {
+    db.exec("ALTER TABLE incomes ADD COLUMN organization_id TEXT;");
+  } catch {
+    // column already exists
+  }
+
+  try {
+    db.exec("ALTER TABLE subscriptions ADD COLUMN organization_id TEXT;");
+  } catch {
+    // column already exists
+  }
+
+  try {
+    db.exec("ALTER TABLE folders ADD COLUMN organization_id TEXT;");
+  } catch {
+    // column already exists
+  }
+
+  try {
     db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);");
   } catch {
     // index already exists
   }
+
+  // Ensure default organization exists
+  const insertOrg = db.prepare(`
+    INSERT OR IGNORE INTO organizations (id, name, currency, created_by_user_id)
+    VALUES (?, ?, ?, ?)
+  `);
+  insertOrg.run("org_default", "Acme Core Ventures", "USD", "user_1");
+
+  const insertMember = db.prepare(`
+    INSERT OR IGNORE INTO organization_members (id, organization_id, user_id, role)
+    VALUES (?, ?, ?, ?)
+  `);
+  insertMember.run("mem_1", "org_default", "user_1", "owner");
+  insertMember.run("mem_2", "org_default", "user_2", "member");
 
   // Pre-hashed default password for initial seed users: 'password123'
   const defaultPasswordHash = bcrypt.hashSync("password123", 10);

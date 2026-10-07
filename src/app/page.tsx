@@ -10,11 +10,14 @@ import SubscriptionsView from "@/components/SubscriptionsView";
 import SettlementsView from "@/components/SettlementsView";
 import DocumentsView from "@/components/DocumentsView";
 import SettingsView from "@/components/SettingsView";
+import { Building, X, ArrowRight } from "lucide-react";
 
 export default function Home() {
   const [authLoading, setAuthLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [partners, setPartners] = useState<any[]>([]);
+  const [organizations, setOrganizations] = useState<any[]>([]);
+  const [activeOrganization, setActiveOrganization] = useState<any>(null);
   const [orgName, setOrgName] = useState("Acme Core Ventures");
   const [currency, setCurrency] = useState("USD");
 
@@ -27,7 +30,14 @@ export default function Home() {
   const [subscriptionModalTrigger, setSubscriptionModalTrigger] = useState(false);
   const [uploadModalTrigger, setUploadModalTrigger] = useState(false);
 
-  // Fetch authentication status
+  // Create Organization Modal
+  const [createOrgModalOpen, setCreateOrgModalOpen] = useState(false);
+  const [modalOrgName, setModalOrgName] = useState("");
+  const [modalOrgCurrency, setModalOrgCurrency] = useState("USD");
+  const [createOrgLoading, setCreateOrgLoading] = useState(false);
+  const [createOrgError, setCreateOrgError] = useState("");
+
+  // Fetch authentication & organization status
   const checkAuth = async () => {
     try {
       setAuthLoading(true);
@@ -35,12 +45,15 @@ export default function Home() {
       const data = await res.json();
       if (data.authenticated && data.user) {
         setCurrentUser(data.user);
+        setOrganizations(data.organizations || []);
+        setActiveOrganization(data.activeOrganization || null);
+        if (data.activeOrganization?.name) setOrgName(data.activeOrganization.name);
+        if (data.activeOrganization?.currency) setCurrency(data.activeOrganization.currency);
       } else {
         setCurrentUser(null);
+        setOrganizations([]);
+        setActiveOrganization(null);
       }
-      setPartners(data.partners || []);
-      if (data.orgName) setOrgName(data.orgName);
-      if (data.currency) setCurrency(data.currency);
     } catch (err) {
       console.error("Auth check error:", err);
       setCurrentUser(null);
@@ -69,15 +82,65 @@ export default function Home() {
     if (currentUser) {
       fetchDashboardMetrics();
     }
-  }, [currentUser, currentTab]);
+  }, [currentUser, currentTab, activeOrganization]);
 
   const handleLogout = async () => {
     try {
       await fetch("/api/auth", { method: "DELETE" });
       setCurrentUser(null);
+      setOrganizations([]);
+      setActiveOrganization(null);
       setCurrentTab("dashboard");
     } catch (err) {
       console.error("Logout error:", err);
+    }
+  };
+
+  const handleSwitchOrganization = async (orgId: string) => {
+    try {
+      await fetch("/api/organizations/switch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ organizationId: orgId }),
+      });
+      await checkAuth();
+    } catch (err) {
+      console.error("Switch org error:", err);
+    }
+  };
+
+  const handleCreateOrganization = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateOrgError("");
+
+    if (!modalOrgName.trim()) {
+      setCreateOrgError("Please enter an organization name.");
+      return;
+    }
+
+    setCreateOrgLoading(true);
+    try {
+      const res = await fetch("/api/organizations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: modalOrgName.trim(),
+          currency: modalOrgCurrency,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setCreateOrgError(data.error || "Failed to create organization.");
+      } else {
+        setCreateOrgModalOpen(false);
+        setModalOrgName("");
+        await checkAuth();
+      }
+    } catch {
+      setCreateOrgError("Network error creating organization.");
+    } finally {
+      setCreateOrgLoading(false);
     }
   };
 
@@ -101,13 +164,14 @@ export default function Home() {
     );
   }
 
-  // If not logged in, render Email & Password Auth screen (with Signup, Resend Forgot Password)
+  // If not logged in, render Email & Password Auth screen (with Single-textbox OTP & Signup)
   if (!currentUser) {
     return (
       <AuthView
         orgName={orgName}
-        onLoginSuccess={(user) => {
+        onLoginSuccess={(user, activeOrg) => {
           setCurrentUser(user);
+          if (activeOrg) setActiveOrganization(activeOrg);
           checkAuth();
         }}
       />
@@ -127,7 +191,10 @@ export default function Home() {
           setCurrentTab(tab);
         }}
         currentUser={currentUser}
-        orgName={orgName}
+        organizations={organizations}
+        activeOrganization={activeOrganization}
+        onSwitchOrganization={handleSwitchOrganization}
+        onOpenCreateOrgModal={() => setCreateOrgModalOpen(true)}
         onLogout={handleLogout}
       />
 
@@ -202,6 +269,7 @@ export default function Home() {
           <SettingsView
             currentUser={currentUser}
             onRefreshAuth={checkAuth}
+            onOpenCreateOrgModal={() => setCreateOrgModalOpen(true)}
           />
         )}
       </main>
@@ -221,16 +289,145 @@ export default function Home() {
         width: "100%"
       }}>
         <div>
-          {orgName} • ExpenseTracker & AssetVault
+          {activeOrganization?.name || orgName} &bull; ExpenseTracker & AssetVault
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <span>Docker Ready</span>
-          <span>•</span>
+          <span>&bull;</span>
           <span>SQLite WAL Persistent</span>
-          <span>•</span>
+          <span>&bull;</span>
           <span style={{ color: "#34d399" }}>Connected</span>
         </div>
       </footer>
+
+      {/* Create Organization Modal */}
+      {createOrgModalOpen && (
+        <div style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0, 0, 0, 0.75)",
+          backdropFilter: "blur(12px)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 1000,
+          padding: 20
+        }}>
+          <div style={{
+            width: "100%",
+            maxWidth: 440,
+            background: "#0f172a",
+            border: "1px solid rgba(255, 255, 255, 0.12)",
+            borderRadius: 18,
+            padding: 28,
+            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.8)",
+            position: "relative"
+          }}>
+            <button
+              onClick={() => setCreateOrgModalOpen(false)}
+              style={{
+                position: "absolute",
+                top: 20,
+                right: 20,
+                background: "transparent",
+                border: "none",
+                color: "var(--text-muted)",
+                cursor: "pointer"
+              }}
+            >
+              <X size={20} />
+            </button>
+
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <div style={{
+                width: 38,
+                height: 38,
+                borderRadius: 10,
+                background: "rgba(99, 102, 241, 0.2)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}>
+                <Building size={20} color="#818cf8" />
+              </div>
+              <div>
+                <h2 style={{ fontSize: "1.15rem", fontWeight: 700, color: "#ffffff", margin: 0 }}>
+                  Create New Organization
+                </h2>
+                <span style={{ fontSize: "0.76rem", color: "var(--text-muted)" }}>
+                  Start a new shared budget or project workspace
+                </span>
+              </div>
+            </div>
+
+            <form onSubmit={handleCreateOrganization} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div>
+                <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
+                  Organization Name
+                </label>
+                <input
+                  id="input-modal-org-name"
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="e.g. Acme Studio, Nexus Ventures"
+                  value={modalOrgName}
+                  onChange={(e) => setModalOrgName(e.target.value)}
+                  className="input-field"
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
+                  Default Currency
+                </label>
+                <select
+                  id="select-modal-org-currency"
+                  value={modalOrgCurrency}
+                  onChange={(e) => setModalOrgCurrency(e.target.value)}
+                  className="input-field"
+                >
+                  <option value="USD">USD ($)</option>
+                  <option value="EUR">EUR (€)</option>
+                  <option value="GBP">GBP (£)</option>
+                  <option value="CAD">CAD (C$)</option>
+                  <option value="AUD">AUD (A$)</option>
+                  <option value="INR">INR (₹)</option>
+                  <option value="SGD">SGD (S$)</option>
+                  <option value="JPY">JPY (¥)</option>
+                </select>
+              </div>
+
+              {createOrgError && (
+                <div style={{ fontSize: "0.82rem", color: "#fb7185", background: "rgba(244, 63, 94, 0.1)", padding: "8px 12px", borderRadius: 8 }}>
+                  {createOrgError}
+                </div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => setCreateOrgModalOpen(false)}
+                  className="btn-secondary"
+                  style={{ padding: "9px 16px" }}
+                >
+                  Cancel
+                </button>
+                <button
+                  id="btn-submit-modal-create-org"
+                  type="submit"
+                  disabled={createOrgLoading}
+                  className="btn-primary"
+                  style={{ padding: "9px 20px", display: "flex", alignItems: "center", gap: 6 }}
+                >
+                  {createOrgLoading ? "Creating..." : "Create Organization"}
+                  {!createOrgLoading && <ArrowRight size={15} />}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

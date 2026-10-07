@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   LayoutDashboard,
   Receipt,
@@ -10,15 +10,21 @@ import {
   FolderLock,
   Settings,
   LogOut,
-  Shield,
-  Layers
+  Layers,
+  Building,
+  ChevronDown,
+  Plus,
+  Check
 } from "lucide-react";
 
 interface NavbarProps {
   currentTab: string;
   setCurrentTab: (tab: string) => void;
   currentUser: any;
-  orgName: string;
+  organizations: any[];
+  activeOrganization: any;
+  onSwitchOrganization: (orgId: string) => void;
+  onOpenCreateOrgModal: () => void;
   onLogout: () => void;
 }
 
@@ -26,9 +32,15 @@ export default function Navbar({
   currentTab,
   setCurrentTab,
   currentUser,
-  orgName,
+  organizations = [],
+  activeOrganization,
+  onSwitchOrganization,
+  onOpenCreateOrgModal,
   onLogout,
 }: NavbarProps) {
+  const [showOrgDropdown, setShowOrgDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   const tabs = [
     { id: "dashboard", label: "Overview", icon: LayoutDashboard },
     { id: "expenses", label: "Expenses", icon: Receipt },
@@ -38,6 +50,17 @@ export default function Navbar({
     { id: "documents", label: "Document Vault", icon: FolderLock },
     { id: "settings", label: "Settings", icon: Settings },
   ];
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setShowOrgDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   return (
     <header style={{
@@ -57,8 +80,8 @@ export default function Navbar({
         justifyContent: "space-between",
         height: 68
       }}>
-        {/* Brand & Organization */}
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        {/* Brand & Organization Switcher */}
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           <div style={{
             width: 40,
             height: 40,
@@ -71,6 +94,7 @@ export default function Navbar({
           }}>
             <Layers size={22} color="#ffffff" />
           </div>
+
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontWeight: 800, fontSize: "1.08rem", letterSpacing: "-0.01em", color: "#ffffff" }}>
@@ -88,10 +112,120 @@ export default function Navbar({
                 VAULT
               </span>
             </div>
-            <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
-              <span>{orgName}</span>
-              <span style={{ width: 4, height: 4, borderRadius: "50%", background: "#10b981" }} />
-              <span style={{ color: "#34d399", fontSize: "0.72rem" }}>Self-Hosted Docker</span>
+
+            {/* Organization Dropdown Trigger */}
+            <div ref={dropdownRef} style={{ position: "relative" }}>
+              <button
+                id="btn-org-switcher"
+                onClick={() => setShowOrgDropdown(!showOrgDropdown)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  color: "var(--text-secondary)",
+                  fontSize: "0.78rem"
+                }}
+              >
+                <Building size={13} color="#818cf8" />
+                <span style={{ color: "#ffffff", fontWeight: 600 }}>
+                  {activeOrganization?.name || "My Organization"}
+                </span>
+                <span style={{ color: "var(--text-muted)", fontSize: "0.72rem" }}>
+                  ({activeOrganization?.currency || "USD"})
+                </span>
+                <ChevronDown size={13} color="var(--text-muted)" />
+              </button>
+
+              {/* Organization Popover Menu */}
+              {showOrgDropdown && (
+                <div style={{
+                  position: "absolute",
+                  top: "calc(100% + 8px)",
+                  left: 0,
+                  width: 260,
+                  background: "rgba(15, 23, 42, 0.95)",
+                  backdropFilter: "blur(20px)",
+                  border: "1px solid var(--border-medium)",
+                  borderRadius: 12,
+                  boxShadow: "0 20px 40px rgba(0, 0, 0, 0.7)",
+                  zIndex: 100,
+                  padding: "8px 0"
+                }}>
+                  <div style={{ padding: "8px 14px", fontSize: "0.72rem", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                    Your Organizations
+                  </div>
+
+                  {organizations.map((org) => {
+                    const isActive = activeOrganization?.id === org.id;
+                    return (
+                      <button
+                        key={org.id}
+                        id={`btn-select-org-${org.id}`}
+                        onClick={() => {
+                          onSwitchOrganization(org.id);
+                          setShowOrgDropdown(false);
+                        }}
+                        style={{
+                          width: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "9px 14px",
+                          background: isActive ? "rgba(99, 102, 241, 0.15)" : "transparent",
+                          border: "none",
+                          cursor: "pointer",
+                          textAlign: "left",
+                          color: "#ffffff",
+                          fontSize: "0.84rem",
+                          transition: "background 0.15s ease"
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <Building size={15} color={isActive ? "#818cf8" : "#64748b"} />
+                          <div>
+                            <div style={{ fontWeight: isActive ? 700 : 500 }}>{org.name}</div>
+                            <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                              {org.currency} &bull; {org.role || "member"}
+                            </div>
+                          </div>
+                        </div>
+                        {isActive && <Check size={15} color="#818cf8" />}
+                      </button>
+                    );
+                  })}
+
+                  <div style={{ height: 1, background: "rgba(255, 255, 255, 0.08)", margin: "6px 0" }} />
+
+                  <button
+                    id="btn-create-new-org-nav"
+                    onClick={() => {
+                      setShowOrgDropdown(false);
+                      onOpenCreateOrgModal();
+                    }}
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "9px 14px",
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      textAlign: "left",
+                      color: "#38bdf8",
+                      fontSize: "0.82rem",
+                      fontWeight: 600
+                    }}
+                  >
+                    <Plus size={15} />
+                    <span>Create New Organization</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -158,7 +292,7 @@ export default function Navbar({
                 {currentUser?.display_name || "User"}
               </span>
               <span style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>
-                {currentUser?.email || currentUser?.role || "Active Account"}
+                {currentUser?.email || "Active"}
               </span>
             </div>
           </div>
@@ -167,7 +301,7 @@ export default function Navbar({
           <button
             id="btn-logout"
             onClick={onLogout}
-            title="Lock & Sign Out"
+            title="Sign Out"
             style={{
               width: 36,
               height: 36,
@@ -177,7 +311,8 @@ export default function Navbar({
               justifyContent: "center",
               background: "rgba(244, 63, 94, 0.1)",
               border: "1px solid rgba(244, 63, 94, 0.25)",
-              color: "#fb7185"
+              color: "#fb7185",
+              cursor: "pointer"
             }}
           >
             <LogOut size={16} />
