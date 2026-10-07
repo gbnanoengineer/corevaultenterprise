@@ -1,0 +1,29 @@
+{
+  "organization": "Acme Core Ventures",
+  "version": "2.4.0",
+  "services": [
+    {
+      "name": "auth-gateway",
+      "port": 8080,
+      "healthCheck": "/health",
+      "replicas": 2
+    },
+    {
+      "name": "expense-tracker",
+      "port": 3000,
+      "database": "sqlite-wal",
+      "encryption": "AES-256"
+    },
+    {
+      "name": "asset-storage",
+      "port": 9000,
+      "maxFileSizeMb": 100,
+      "publicShares": true
+    }
+  ],
+  "billing_rules": {
+    "split_default": "50-50",
+    "alert_threshold_usd": 1500,
+    "currency": "USD"
+  }
+}
