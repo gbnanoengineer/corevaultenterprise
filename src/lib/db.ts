@@ -9,17 +9,26 @@ const UPLOADS_DIR = path.join(DATA_DIR, "uploads");
 
 // Safe directory initialization
 try {
-  if (!fs.existsSync(DATA_DIR)) {
+  if (!fs.existsSync(/*turbopackIgnore: true*/ DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
-  if (!fs.existsSync(UPLOADS_DIR)) {
+  if (!fs.existsSync(/*turbopackIgnore: true*/ UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
   }
 } catch {
   // directory might already exist
 }
 
-const DB_PATH = path.join(DATA_DIR, "expense_vault.db");
+const DEFAULT_DB_NAME = "corevault.db";
+const LEGACY_DB_NAME = "expense_vault.db";
+const defaultDbPath = path.join(DATA_DIR, DEFAULT_DB_NAME);
+const legacyDbPath = path.join(DATA_DIR, LEGACY_DB_NAME);
+
+// Respect DATABASE_PATH env var; fallback to existing legacy DB or new CoreVault DB
+const DB_PATH =
+  process.env.DATABASE_PATH ||
+  (fs.existsSync(legacyDbPath) ? legacyDbPath : defaultDbPath);
+
 const db = new Database(DB_PATH);
 
 // Concurrency PRAGMAs
@@ -403,9 +412,16 @@ export function initDatabase() {
   } catch (err) {
     // ignore
   }
+
+  try {
+    const { ensureStartupRestore } = require("./dbBackup");
+    ensureStartupRestore().catch(() => {});
+  } catch {
+    // ignore
+  }
 }
 
 // Initialize on load
 initDatabase();
 
-export { db, DATA_DIR, UPLOADS_DIR };
+export { db, DB_PATH, DATA_DIR, UPLOADS_DIR };

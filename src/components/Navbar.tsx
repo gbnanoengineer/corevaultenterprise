@@ -98,18 +98,18 @@ export default function Navbar({
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontWeight: 800, fontSize: "1.08rem", letterSpacing: "-0.01em", color: "#ffffff" }}>
-                ExpenseTracker
+                CoreVault
               </span>
               <span style={{
-                background: "rgba(99, 102, 241, 0.15)",
-                color: "#818cf8",
+                background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%)",
+                color: "#38bdf8",
                 fontSize: "0.68rem",
                 fontWeight: 700,
-                padding: "2px 6px",
+                padding: "2px 7px",
                 borderRadius: 4,
-                border: "1px solid rgba(99, 102, 241, 0.3)"
+                border: "1px solid rgba(56, 189, 248, 0.3)"
               }}>
-                VAULT
+                WORKSPACE OS
               </span>
             </div>
 

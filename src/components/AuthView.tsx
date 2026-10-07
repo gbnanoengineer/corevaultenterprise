@@ -455,10 +455,10 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
           </div>
 
           <h1 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", margin: "0 0 6px 0" }}>
-            ExpenseTracker <span style={{ color: "#818cf8" }}>Vault</span>
+            CoreVault <span style={{ color: "#38bdf8" }}>Enterprise</span>
           </h1>
           <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", margin: 0 }}>
-            Unified Authentication & Organization Vault
+            Unified Enterprise Finance, Multi-Tenant Workspaces & Asset Cloud
           </p>
 
           {inviteToken && (

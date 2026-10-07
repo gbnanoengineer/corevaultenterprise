@@ -1,154 +1,132 @@
-# ExpenseTracker & AssetVault
+# CoreVault
 
-A self-hosted, full-stack financial command center and document asset vault engineered for 2-partner organizations and small agencies. Built with **Next.js 16**, **TypeScript**, **SQLite (WAL mode)**, **Firebase Cloud Storage Buckets & Firestore**, and containerized for single-command **Docker** deployment.
-
----
-
-## Key Features
-
-### 1. Unique PIN Authentication & Partner Profiles
-- **No Email/Password Required**: Fast, secure 6-digit numeric PIN authentication with an on-screen keypad and physical keyboard support.
-- **Default Profiles**:
-  - **Partner 1 (Gaurav)** — Default PIN: `123456`
-  - **Partner 2 (Partner)** — Default PIN: `654321`
-- **Instant Profile Switcher**: Switch active context between partners in one click.
-- **Master Recovery Key**: Emergency override (`MASTER-9F8A2D7C` or view in Settings) to reset forgotten PINs.
-
-### 2. Expense & Expenditure Tracking
-- Categorized expense logging (Cloud & Hosting, SaaS, Hardware, Legal, Contractors, Office, etc.).
-- Track who paid out-of-pocket (Partner 1, Partner 2, or Company Account).
-- Payment methods (Company Card, Personal Card, Wire Transfer, Cash).
-- Flexible split models: **50/50 Equal Partner Split** vs **100% Company Expense**.
-- Export expense reports directly to **CSV**.
-
-### 3. Client Inflows & Revenue
-- Track incoming project retainers, milestone payments, and client receivables.
-- Clear status tracking: **Received (Cleared)** vs **Pending Client Invoices**.
-
-### 4. SaaS & Infrastructure Subscriptions Manager
-- Track recurring tool commitments (GitHub, AWS, Figma, Google Workspace, etc.).
-- Real-time **Monthly Burn Rate** and **Annualized Run-Rate** calculations.
-- Renewal countdown alerts (highlighting upcoming renewals in the next 14 days).
-
-### 5. Automated Partner Settlement Engine
-- Live 50/50 balance calculation: analyzes out-of-pocket spend and previous payouts to determine who owes whom.
-- High-visibility settlement status (e.g. *“Partner 2 owes Gaurav $302.50”*).
-- **One-Click Settlement Transfer Logging** with historical audit ledger.
-
-### 6. Document Vault & Digital Asset Engine
-- **Multi-Folder Hierarchy**: Shared Organization Folders and Private Partner Vaults.
-- **Multi-Format In-App Document Previews**:
-  - **Excel Spreadsheets (`.xlsx`, `.xls`, `.csv`)**: Tabular interactive data grid with sheet switching powered by SheetJS.
-  - **Word Documents (`.docx`)**: Clean HTML paper rendering powered by Mammoth.
-  - **PDF Documents (`.pdf`)**: Embedded viewer.
-  - **Code & Text (`.json`, `.ts`, `.js`, `.py`, `.md`, `.sql`)**: JetBrains Mono code view with copy button.
-  - **Images (`.png`, `.jpg`, `.webp`, `.svg`)**: High-res image preview.
-  - **PowerPoint (`.pptx`)**: Presentation card and quick delivery.
-- **Policy Compliance**: Audio files are strictly filtered out per organization policy.
-- **Public Shareable Links for Clients**: Generate secure public links (`/share/[token]`) for individual files or entire folders to share deliverable instructions with clients without requiring an account.
+> **Enterprise Finance, Multi-Tenant Workspaces & S3-Powered Cloud Asset Vault**  
+> *Self-hosted, ultra-low resource architecture (<20MB RAM) with zero-loss cloud database persistence, automated S3 snapshot backups, and one-click ANSI SQL export migrations.*
 
 ---
 
+## 🌟 Overview
+
+**CoreVault** is an all-in-one business management platform and document vault designed for startups, agencies, and modern enterprises. Unlike monolithic enterprise tools that require hundreds of megabytes of RAM and heavy external database services, CoreVault runs an ultra-fast, embedded **SQLite 3 WAL** engine backed by **S3-compatible cloud storage** and **Resend email authentication**.
+
+### Why CoreVault?
+1. **Multi-Tenancy with Strict Data Isolation**: Users create, switch between, and collaborate across independent organizations. Organization A cannot access Organization B's data unless explicitly invited.
+2. **Zero-Loss Redeployment Architecture**: Prevents SQLite data loss when deploying or redeploying on ephemeral cloud containers (Docker, Railway, Fly.io, Render, VPS) via automatic S3 cold-start restores and continuous live snapshots.
+3. **No Vendor Lock-In**: Export your entire database as a clean, migration-ready **ANSI SQL Dump (`.sql`)** or **SQLite binary (`.db`)** with a single click.
+4. **Minimal Resource Load**: Runs embedded in-process using under **20 MB RAM** with zero background daemons.
+
 ---
 
-## S3-Compatible Cloud Storage Buckets
+## 🚀 Key Capabilities
 
-Instead of proprietary vendor SDKs, the application uses the universal **AWS S3 API (`@aws-sdk/client-s3`)**, enabling compatibility with any S3-compatible bucket provider:
+### 1. Unified Authentication & Team Access
+- **Single-Input Smart Auth**: Single email entry automatically detects whether the user needs registration, password login, passwordless OTP login, or password reset.
+- **Resend Email Integration**: Dispatches 6-digit branded OTP codes and team invitations.
+- **Organization Invitations**: Generate secure email invitation links (`/?inviteToken=...`) with one-click acceptance.
+- **Strict Multi-Tenancy**: Organization switching dropdown in navbar; non-members are blocked at the SQL query level (403/404 responses).
 
-### 1. Recommended Free / Low-Cost S3 Buckets
-- **Cloudflare R2**: **10 GB free storage forever** with **$0 egress fees** (ideal for documents and client previews).
-- **MinIO**: Lightweight, open-source S3-compatible storage container for 100% self-hosted local deployments.
-- **AWS S3 / Wasabi / Backblaze B2 / Supabase Storage**: Fully supported out-of-the-box.
+### 2. Enterprise Financial Ledger
+- **Categorized Expense Tracking**: Log operational expenses with currency, tags, payment methods, and receipt attachments.
+- **Client Revenue & Inflows**: Track project retainers, milestone receivables, and pending invoices.
+- **SaaS Subscription Tracker**: Live monthly burn-rate calculations and 14-day renewal alerts.
+- **Partner Settlement Ledger**: Calculates out-of-pocket spend and 50/50 net partner balances with one-click settlement logging.
 
-### 2. Environment Configuration
-In your `.env` or `docker-compose.yml`:
+### 3. S3 Cloud Document Vault & Asset Engine
+- **S3-Compatible Storage**: Connects to Cloudflare R2, MinIO, AWS S3, Wasabi, or Backblaze B2.
+- **Sharp Image Compression**: Automatic WebP conversion and EXIF stripping (60%–90% storage savings).
+- **Multi-Format In-App Previews**: Interactive preview for Excel (`.xlsx`, `.csv`), Word (`.docx`), PDF, code files, and images.
+- **Auto-Expiry Retention Policies**: Set 24h, 7d, 30d, 90d, or custom expiry dates. Expired files are automatically purged from both disk and S3 buckets.
+- **Public Share Links**: Secure deliverable links (`/share/[token]`) for external clients.
+- **Strict Audio Filter**: Excludes audio formats per organizational document policy.
+
+### 4. Zero-Loss Database Persistence & Migration Hub
+- **Cold-Start Auto-Restore**: If deployed on an ephemeral container without a mounted volume, CoreVault automatically checks S3 for the latest database snapshot and restores it on startup.
+- **Live S3 Snapshots**: Atomic `VACUUM INTO` and WAL checkpoints push live database backups straight to your S3 bucket without blocking queries.
+- **1-Click SQL Dump**: Download a complete `.sql` script containing all schemas and table inserts for easy migration to PostgreSQL, MySQL, LibSQL, or Supabase.
+- **1-Click SQLite Backup**: Download raw `.db` file for offline preservation.
+
+---
+
+## 🛠️ Tech Stack
+
+- **Framework**: [Next.js 16](https://nextjs.org/) (App Router & Turbopack)
+- **Language**: [TypeScript](https://www.typescriptlang.org/)
+- **Database**: [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) with Write-Ahead Logging (WAL)
+- **Cloud Storage**: [@aws-sdk/client-s3](https://aws.amazon.com/sdk-for-javascript/)
+- **Email Service**: [Resend](https://resend.com/)
+- **Asset Processing**: [Sharp](https://sharp.pixelplumbing.com/) (WebP), [SheetJS](https://sheetjs.com/) (Excel), [Mammoth](https://github.com/mwilliamson/mammoth.js) (Word)
+- **Security**: [bcryptjs](https://github.com/dcodeIO/bcrypt.js) for password hashing
+
+---
+
+## ⚙️ Environment Variables
+
+Create a `.env` file in the project root:
+
 ```env
-S3_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com  # Or http://minio:9000 for local MinIO
-S3_ACCESS_KEY_ID=your-s3-access-key-id
-S3_SECRET_ACCESS_KEY=your-s3-secret-access-key
-S3_BUCKET_NAME=expense-vault-assets
-S3_REGION=auto
-S3_FORCE_PATH_STYLE=false
-```
-*Note: If S3 environment variables are omitted, the application seamlessly stores all assets in the local persistent Docker volume (`./data/uploads`) with zero downtime.*
+# Application Host
+PORT=3000
 
----
+# Database & Volume Persistence
+DATA_DIR=./data
+DATABASE_PATH=./data/corevault.db
 
-## File Auto-Expiry & Retention Policy Engine
+# Resend Email Configuration (OTP & Invitations)
+RESEND_API_KEY=re_your_resend_api_key
+RESEND_FROM_ADDRESS=no-reply@yourdomain.com
+RESEND_FROM_NAME="CoreVault Security"
 
-You can set retention lifecycles when uploading any document:
-- **Presets Available**:
-  - `Permanent (Never Expire)`
-  - `24 Hours (Temporary Client Deliverable)`
-  - `7 Days (Weekly Review)`
-  - `30 Days (Monthly Deliverable)`
-  - `90 Days (Quarterly Retention)`
-  - `Custom Date`
-- **Automated Lifecycle Purge**: The system continuously purges expired assets from both the **S3 Cloud Storage Bucket** and the host disk, and revokes any associated public client share links.
-
----
-
-## Asset Compression Pipeline
-
-All incoming assets pass through an automatic optimization pipeline powered by **Sharp**:
-- **Automatic WebP Conversion**: Raster images (`.png`, `.jpg`, `.jpeg`, `.tiff`) are converted to modern WebP (quality 82).
-- **Smart Resizing**: Images wider than 2048px are resized to prevent 20MB camera uploads from consuming bucket storage.
-- **Metadata Stripping**: All EXIF/GPS metadata is stripped for partner privacy and minimal payload.
-- **Real-World Savings**: Verified **60% to 92% reduction** in asset file size before uploading to the bucket or disk.
-- **Document Fidelity**: PDFs, Excel spreadsheets, Word docs, and code files are preserved untouched to guarantee preview accuracy.
-
----
-
-## Automated On-Delete Cleanup Policy
-
-To eliminate orphaned files and prevent runaway storage consumption:
-1. **Single File Deletion**: When any file is deleted, the system purges the physical asset from both the **S3 Cloud Storage Bucket** and local volume, and revokes all associated public share links.
-2. **Cascading Folder Deletion**: When a folder is deleted, the system recursively finds all child files and subfolders, and purges all underlying bucket objects in a batch operation.
-3. **Expense Receipt Cleanup**: When an expense is deleted, if its attached receipt is not shared by other expenses, the receipt asset is automatically purged from the S3 bucket.
-
----
-
-## Self-Hosted Docker Deployment
-
-The application is containerized with a multi-stage `Dockerfile` and persistent volume mounts.
-
-### 1. Quick Start with Docker Compose
-
-```bash
-# Start container with persistent storage
-docker compose up -d --build
+# S3-Compatible Cloud Storage (Cloudflare R2, MinIO, AWS S3)
+S3_URL=https://<account_id>.r2.cloudflarestorage.com
+S3_ACCESS_KEY=your_s3_access_key
+S3_SECRET-KEY=your_s3_secret_key
+BUCKET_NAME=corevault-assets
+S3_REGION=us-east-1
 ```
 
-The app will be accessible at `http://localhost:3000`.
+---
 
-### 2. Persistent Storage
+## 📦 Deployment Guide
 
-The SQLite database and uploaded files are persisted on your host machine inside `./data/`:
-- `./data/expense_vault.db` (SQLite database with WAL journal mode)
-- `./data/uploads/` (Uploaded files, documents, and spreadsheets)
+### Option 1: Docker (Recommended)
+
+CoreVault comes with multi-stage Docker build support:
+
+```bash
+# Build and run with persistent volume
+docker run -d \
+  -p 3000:3000 \
+  -v $(pwd)/data:/app/data \
+  --env-file .env \
+  --name corevault \
+  corevault:latest
+```
+
+### Option 2: Railway / Fly.io / Render / VPS
+
+1. **Mount a Volume**: Attach a persistent disk volume to `/app/data` (set `DATA_DIR=/app/data`).
+2. **S3 Backup Protection**: If running on an ephemeral host without persistent disks, configure your S3 credentials in environment variables. CoreVault will automatically push snapshots to S3 and auto-restore them on container cold-starts.
 
 ---
 
-## Local Development (Without Docker)
+## 💻 Local Development
 
 ```bash
-# Install dependencies
+# 1. Clone repository
+git clone https://github.com/your-username/corevault.git
+cd corevault
+
+# 2. Install dependencies
 npm install
 
-# Run dev server (Turbopack)
+# 3. Start development server
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to view the application.
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## Default Access Credentials
+## 🛡️ License
 
-| Profile | Username | Role | Default PIN |
-| :--- | :--- | :--- | :--- |
-| **Partner 1 (Gaurav)** | `partner1` | Founder | `123456` |
-| **Partner 2** | `partner2` | Partner | `654321` |
-| **Master Recovery Key** | — | Emergency Override | `MASTER-9F8A2D7C` |
-
-*PINs and partner display names can be customized anytime in the **Settings** tab.*
+MIT License. Free for personal, agency, and enterprise use.

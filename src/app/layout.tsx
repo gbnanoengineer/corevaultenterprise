@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ExpenseTracker & AssetVault | Partner Finance & Document Hub",
-  description: "Self-hosted organization finance tracking, partner settlement calculator, SaaS subscription tracker, and multi-format document preview vault.",
+  title: "CoreVault | Enterprise Finance, Multi-Tenant Workspaces & Cloud Asset Vault",
+  description: "Unified enterprise finance ledger, partner settlements, SaaS subscription tracker, and multi-tenant S3-backed document vault with zero-loss cloud database persistence.",
 };
 
 export default function RootLayout({

@@ -128,4 +128,40 @@ export async function deleteMultipleFromS3(keys: string[]): Promise<number> {
   }
 }
 
+export async function uploadBackupToS3(filename: string, buffer: Buffer): Promise<boolean> {
+  if (!s3Client || !isS3Configured) return false;
+  try {
+    await s3Client.send(
+      new PutObjectCommand({
+        Bucket: S3_BUCKET_NAME,
+        Key: `database_backups/${filename}`,
+        Body: buffer,
+        ContentType: "application/x-sqlite3",
+      })
+    );
+    return true;
+  } catch (err) {
+    console.error(`Error uploading database backup ${filename} to S3 bucket:`, err);
+    return false;
+  }
+}
+
+export async function downloadBackupFromS3(filename: string): Promise<Buffer | null> {
+  if (!s3Client || !isS3Configured) return null;
+  try {
+    const response = await s3Client.send(
+      new GetObjectCommand({
+        Bucket: S3_BUCKET_NAME,
+        Key: `database_backups/${filename}`,
+      })
+    );
+    if (!response.Body) return null;
+    const byteArray = await response.Body.transformToByteArray();
+    return Buffer.from(byteArray);
+  } catch (err) {
+    console.warn(`Database backup ${filename} not found or error downloading from S3:`, err);
+    return null;
+  }
+}
+
 export { S3_BUCKET_NAME, S3_ENDPOINT, s3Client };
