@@ -22,7 +22,8 @@ import {
   ChevronRight,
   AlertCircle,
   X,
-  FileCheck
+  FileCheck,
+  Clock
 } from "lucide-react";
 import DocumentPreviewModal from "./DocumentPreviewModal";
 
@@ -57,6 +58,8 @@ export default function DocumentsView({
   // File Upload Form
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadPrivate, setUploadPrivate] = useState(false);
+  const [uploadExpiryDays, setUploadExpiryDays] = useState("never");
+  const [customExpiryDate, setCustomExpiryDate] = useState("");
   const [uploadError, setUploadError] = useState("");
   const [uploading, setUploading] = useState(false);
 
@@ -136,6 +139,10 @@ export default function DocumentsView({
       formData.append("file", uploadFile);
       if (currentFolderId) formData.append("folderId", currentFolderId);
       formData.append("isPrivate", uploadPrivate ? "1" : "0");
+      formData.append("expiryDays", uploadExpiryDays);
+      if (uploadExpiryDays === "custom" && customExpiryDate) {
+        formData.append("customExpiryDate", customExpiryDate);
+      }
 
       const res = await fetch("/api/files", {
         method: "POST",
@@ -393,6 +400,7 @@ export default function DocumentsView({
                     <th style={{ padding: "14px 16px" }}>Size</th>
                     <th style={{ padding: "14px 16px" }}>Uploaded By</th>
                     <th style={{ padding: "14px 16px" }}>Visibility</th>
+                    <th style={{ padding: "14px 16px" }}>Retention / Expiry</th>
                     <th style={{ padding: "14px 18px", textAlign: "right" }}>Actions</th>
                   </tr>
                 </thead>
@@ -448,6 +456,17 @@ export default function DocumentsView({
                           <span className="badge badge-rose" style={{ fontSize: "0.68rem" }}>Private</span>
                         ) : (
                           <span className="badge badge-emerald" style={{ fontSize: "0.68rem" }}>Shared</span>
+                        )}
+                      </td>
+
+                      <td style={{ padding: "14px 16px" }}>
+                        {file.expires_at ? (
+                          <span className="badge badge-amber" style={{ fontSize: "0.68rem" }} title={`Auto-purges on: ${file.expires_at}`}>
+                            <Clock size={11} />
+                            <span>Expires {file.expires_at.split(" ")[0]}</span>
+                          </span>
+                        ) : (
+                          <span style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>Permanent</span>
                         )}
                       </td>
 
@@ -666,6 +685,42 @@ export default function DocumentsView({
 
               {uploadError && (
                 <div style={{ color: "#fb7185", fontSize: "0.82rem" }}>{uploadError}</div>
+              )}
+
+              {/* Retention Policy */}
+              <div>
+                <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
+                  Auto-Expiry Retention Policy
+                </label>
+                <select
+                  id="select-file-expiry"
+                  value={uploadExpiryDays}
+                  onChange={(e) => setUploadExpiryDays(e.target.value)}
+                  className="input-field"
+                >
+                  <option value="never">Permanent (Never Expire)</option>
+                  <option value="1">24 Hours (Temporary Client Deliverable)</option>
+                  <option value="7">7 Days (1 Week Retention)</option>
+                  <option value="30">30 Days (1 Month Retention)</option>
+                  <option value="90">90 Days (Quarterly Retention)</option>
+                  <option value="custom">Custom Date</option>
+                </select>
+              </div>
+
+              {uploadExpiryDays === "custom" && (
+                <div>
+                  <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
+                    Select Expiry Date
+                  </label>
+                  <input
+                    id="input-custom-expiry-date"
+                    type="date"
+                    value={customExpiryDate}
+                    onChange={(e) => setCustomExpiryDate(e.target.value)}
+                    className="input-field"
+                    required
+                  />
+                </div>
               )}
 
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

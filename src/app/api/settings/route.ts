@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser, getAllUsers } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { isFirebaseConfigured, storageBucket } from "@/lib/firebase";
+import { isS3Configured, S3_BUCKET_NAME } from "@/lib/s3";
 
 export async function GET() {
   try {
@@ -22,10 +22,11 @@ export async function GET() {
       masterRecoveryKey,
       partners,
       storage: {
-        isFirebaseConfigured,
-        bucketName: storageBucket?.name || process.env.FIREBASE_STORAGE_BUCKET || "Local Storage Volume (./data/uploads)",
+        isS3Configured,
+        bucketName: isS3Configured ? S3_BUCKET_NAME : "Local Storage Volume (./data/uploads)",
         compressionEngine: "Sharp WebP Engine (Active)",
-        onDeleteCleanup: "Enabled (Automatic Cascade Purge)",
+        onDeleteCleanup: "Enabled (Automatic S3 & Disk Purge)",
+        fileExpiryEngine: "Active (Auto-purge on expiration)",
       },
     });
   } catch (error) {

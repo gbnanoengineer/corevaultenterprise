@@ -393,17 +393,17 @@ export default function SettingsView({ currentUser, onRefreshAuth }: SettingsVie
             padding: 16
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#ffffff" }}>Firebase Cloud Storage Bucket</span>
+              <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#ffffff" }}>S3-Compatible Bucket</span>
               <span className="badge badge-emerald" style={{ fontSize: "0.68rem" }}>
-                5GB Free Tier
+                Cloudflare R2 / MinIO / S3
               </span>
             </div>
             <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
-              Files and documents can sync directly to a free Firebase Cloud Storage bucket. Without cloud credentials, assets are durably stored in the local Docker volume mount (<code style={{ color: "#38bdf8" }}>./data/uploads</code>).
+              Connect any small or free S3-compatible bucket (e.g. <strong>Cloudflare R2 with 10 GB free</strong>, self-hosted MinIO, or AWS S3). Without S3 keys, assets are stored in the local Docker volume mount (<code style={{ color: "#38bdf8" }}>./data/uploads</code>).
             </p>
           </div>
 
-          {/* Compression Engine */}
+          {/* Retention & Expiry */}
           <div style={{
             background: "rgba(255, 255, 255, 0.03)",
             border: "1px solid var(--border-subtle)",
@@ -411,11 +411,11 @@ export default function SettingsView({ currentUser, onRefreshAuth }: SettingsVie
             padding: 16
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#ffffff" }}>Sharp WebP Compression</span>
-              <span className="badge badge-indigo" style={{ fontSize: "0.68rem" }}>Active</span>
+              <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#ffffff" }}>File Auto-Expiry Engine</span>
+              <span className="badge badge-amber" style={{ fontSize: "0.68rem" }}>Active</span>
             </div>
             <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
-              Incoming raster images and receipts are automatically resized (max 2048px), stripped of GPS/EXIF metadata, and converted to modern high-efficiency WebP, reducing bucket storage by <strong>60%–85%</strong>.
+              Upload files with a custom or preset retention period (24 hours, 7 days, 30 days, 90 days). Expired files are automatically purged from both the S3 bucket and disk storage.
             </p>
           </div>
         </div>
@@ -436,12 +436,12 @@ export default function SettingsView({ currentUser, onRefreshAuth }: SettingsVie
               Automated Cascading On-Delete Cleanup (Active)
             </div>
             <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", marginTop: 2, lineHeight: 1.4 }}>
-              When a document, receipt, or folder is deleted, the system automatically purges the corresponding physical files and subfolders from both the Firebase Cloud Storage bucket and host disk to prevent orphaned files or runaway bucket costs.
+              When a document, receipt, or folder is deleted, the system automatically purges the corresponding physical files and subfolders from both the S3 cloud storage bucket and host disk to prevent orphaned files or runaway bucket costs.
             </p>
           </div>
         </div>
 
-        {/* Firebase Environment Setup Guide */}
+        {/* S3 Environment Setup Guide */}
         <div style={{
           background: "rgba(0, 0, 0, 0.35)",
           border: "1px solid var(--border-subtle)",
@@ -451,13 +451,14 @@ export default function SettingsView({ currentUser, onRefreshAuth }: SettingsVie
           color: "var(--text-secondary)"
         }}>
           <div style={{ fontWeight: 600, color: "#e2e8f0", marginBottom: 4 }}>
-            Firebase Free Tier Environment Setup (docker-compose.yml or .env):
+            S3-Compatible Bucket Configuration (docker-compose.yml or .env):
           </div>
           <code style={{ display: "block", fontFamily: "var(--font-mono)", color: "#a5b4fc", whiteSpace: "pre", marginTop: 4 }}>
-            FIREBASE_PROJECT_ID=your-project-id{"\n"}
-            FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxx@your-project-id.iam.gserviceaccount.com{"\n"}
-            FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEv...-----END PRIVATE KEY-----\n"{"\n"}
-            FIREBASE_STORAGE_BUCKET=your-project-id.appspot.com
+            S3_ENDPOINT=https://&lt;account_id&gt;.r2.cloudflarestorage.com  # Or http://minio:9000 for MinIO{"\n"}
+            S3_ACCESS_KEY_ID=your-s3-access-key-id{"\n"}
+            S3_SECRET_ACCESS_KEY=your-s3-secret-access-key{"\n"}
+            S3_BUCKET_NAME=expense-vault-assets{"\n"}
+            S3_REGION=auto
           </code>
         </div>
       </div>

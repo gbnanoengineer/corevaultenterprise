@@ -1,16 +1,24 @@
 import fs from "fs";
 import path from "path";
-import { UPLOADS_DIR } from "./db";
-import { isFirebaseConfigured, storageBucket } from "./firebase";
+import { db, UPLOADS_DIR } from "./db";
+import {
+  isS3Configured,
+  uploadToS3,
+  downloadFromS3,
+  deleteFromS3,
+  deleteMultipleFromS3,
+  S3_BUCKET_NAME,
+} from "./s3";
 
 export interface StoredAsset {
   storagePath: string;
   isCloudBucket: boolean;
-  publicUrl?: string;
+  bucketName?: string;
 }
 
 /**
- * Saves asset to Firebase Cloud Storage Bucket or local disk with mirror sync.
+ * Saves asset to S3-compatible cloud bucket (e.g. Cloudflare R2, MinIO, AWS S3)
+ * or local disk with mirror sync.
  */
 export async function saveAsset(
   buffer: Buffer,
@@ -22,39 +30,24 @@ export async function saveAsset(
   fs.writeFileSync(localFilePath, buffer);
 
   let isCloudBucket = false;
-  let publicUrl: string | undefined = undefined;
 
-  // Upload to Firebase Storage Bucket if configured
-  if (isFirebaseConfigured && storageBucket) {
-    try {
-      const file = storageBucket.file(`vault/${storageFileName}`);
-      await file.save(buffer, {
-        metadata: {
-          contentType: mimeType,
-          metadata: {
-            uploadedAt: new Date().toISOString(),
-          },
-        },
-        resumable: false,
-      });
-
+  // Upload to S3-compatible cloud bucket if configured
+  if (isS3Configured) {
+    const uploaded = await uploadToS3(storageFileName, buffer, mimeType);
+    if (uploaded) {
       isCloudBucket = true;
-      // Get public URL or signed bucket URL
-      publicUrl = `https://storage.googleapis.com/${storageBucket.name}/vault/${storageFileName}`;
-    } catch (err) {
-      console.warn("Failed to upload to Firebase Bucket, falling back to local storage:", err);
     }
   }
 
   return {
     storagePath: storageFileName,
     isCloudBucket,
-    publicUrl,
+    bucketName: isCloudBucket ? S3_BUCKET_NAME : undefined,
   };
 }
 
 /**
- * Retrieves asset buffer from local disk or cloud bucket.
+ * Retrieves asset buffer from local disk or S3 bucket.
  */
 export async function getAssetBuffer(storageFileName: string): Promise<Buffer | null> {
   const localFilePath = path.join(UPLOADS_DIR, storageFileName);
@@ -63,19 +56,16 @@ export async function getAssetBuffer(storageFileName: string): Promise<Buffer | 
     return fs.readFileSync(localFilePath);
   }
 
-  // Attempt pull from Firebase Cloud Storage bucket if local is missing
-  if (isFirebaseConfigured && storageBucket) {
+  // Attempt pull from S3 bucket if local copy is missing
+  if (isS3Configured) {
     try {
-      const file = storageBucket.file(`vault/${storageFileName}`);
-      const [exists] = await file.exists();
-      if (exists) {
-        const [downloadedBuffer] = await file.download();
-        // Cache locally for fast subsequent reads
-        fs.writeFileSync(localFilePath, downloadedBuffer);
-        return downloadedBuffer;
+      const buffer = await downloadFromS3(storageFileName);
+      if (buffer) {
+        fs.writeFileSync(localFilePath, buffer);
+        return buffer;
       }
     } catch (err) {
-      console.error("Error retrieving asset from cloud bucket:", err);
+      console.error("Error retrieving asset from S3 bucket:", err);
     }
   }
 
@@ -83,7 +73,7 @@ export async function getAssetBuffer(storageFileName: string): Promise<Buffer | 
 }
 
 /**
- * On-Delete Cleanup: Deletes file from both Firebase Cloud Bucket and local storage disk.
+ * On-Delete Cleanup: Deletes file from both S3 bucket and local disk.
  */
 export async function deleteAsset(storageFileName: string): Promise<boolean> {
   let cleaned = false;
@@ -99,17 +89,13 @@ export async function deleteAsset(storageFileName: string): Promise<boolean> {
     }
   }
 
-  // 2. Delete from Firebase Cloud Storage Bucket
-  if (isFirebaseConfigured && storageBucket) {
+  // 2. Delete from S3-compatible bucket
+  if (isS3Configured) {
     try {
-      const file = storageBucket.file(`vault/${storageFileName}`);
-      const [exists] = await file.exists();
-      if (exists) {
-        await file.delete();
-        cleaned = true;
-      }
+      const s3Deleted = await deleteFromS3(storageFileName);
+      if (s3Deleted) cleaned = true;
     } catch (err) {
-      console.error("Failed to delete asset from Firebase Cloud Storage bucket:", err);
+      console.error("Failed to delete asset from S3 bucket:", err);
     }
   }
 
@@ -117,13 +103,63 @@ export async function deleteAsset(storageFileName: string): Promise<boolean> {
 }
 
 /**
- * Batch On-Delete Cleanup for multiple assets (e.g. when deleting a folder with all its files)
+ * Batch On-Delete Cleanup for multiple assets (e.g. cascading folder deletion)
  */
 export async function deleteMultipleAssets(storageFileNames: string[]): Promise<number> {
   let count = 0;
+
+  // Local disk deletions
   for (const fileName of storageFileNames) {
-    const ok = await deleteAsset(fileName);
-    if (ok) count++;
+    const localFilePath = path.join(UPLOADS_DIR, fileName);
+    if (fs.existsSync(localFilePath)) {
+      try {
+        fs.unlinkSync(localFilePath);
+        count++;
+      } catch (err) {
+        console.error("Failed to delete local file:", err);
+      }
+    }
   }
+
+  // Batch delete from S3 bucket
+  if (isS3Configured) {
+    try {
+      await deleteMultipleFromS3(storageFileNames);
+    } catch (err) {
+      console.error("Failed to bulk delete from S3 bucket:", err);
+    }
+  }
+
   return count;
+}
+
+/**
+ * Automated Expiry Cleanup:
+ * Checks for files whose expires_at timestamp has passed,
+ * deletes their S3 bucket objects & local files, and removes their records.
+ */
+export async function purgeExpiredFiles(): Promise<number> {
+  try {
+    const expiredFiles = db
+      .prepare(
+        "SELECT id, storage_path, name FROM files WHERE expires_at IS NOT NULL AND datetime(expires_at) <= datetime('now')"
+      )
+      .all() as any[];
+
+    if (expiredFiles.length === 0) return 0;
+
+    for (const file of expiredFiles) {
+      if (file.storage_path) {
+        await deleteAsset(file.storage_path);
+      }
+      db.prepare("DELETE FROM shared_links WHERE file_id = ?").run(file.id);
+      db.prepare("DELETE FROM files WHERE id = ?").run(file.id);
+    }
+
+    console.log(`Auto-purged ${expiredFiles.length} expired files and bucket assets.`);
+    return expiredFiles.length;
+  } catch (err) {
+    console.error("Error purging expired files:", err);
+    return 0;
+  }
 }

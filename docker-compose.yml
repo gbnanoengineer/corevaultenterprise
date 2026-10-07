@@ -11,11 +11,13 @@ services:
       - NODE_ENV=production
       - DATA_DIR=/app/data
       - PORT=3000
-      # Optional: Firebase Free Tier Cloud DB & Storage Buckets
-      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-}
-      - FIREBASE_CLIENT_EMAIL=${FIREBASE_CLIENT_EMAIL:-}
-      - FIREBASE_PRIVATE_KEY=${FIREBASE_PRIVATE_KEY:-}
-      - FIREBASE_STORAGE_BUCKET=${FIREBASE_STORAGE_BUCKET:-}
+      # S3-Compatible Bucket Configuration (Cloudflare R2, MinIO, Wasabi, or AWS S3)
+      - S3_ENDPOINT=${S3_ENDPOINT:-}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-expense-vault-assets}
+      - S3_REGION=${S3_REGION:-auto}
+      - S3_FORCE_PATH_STYLE=${S3_FORCE_PATH_STYLE:-false}
     volumes:
       # Persistent local storage for SQLite database and uploaded documents
       - ./data:/app/data

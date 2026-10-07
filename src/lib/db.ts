@@ -71,6 +71,7 @@ export function initDatabase() {
       folder_id TEXT,
       uploaded_by_user_id TEXT,
       is_private INTEGER DEFAULT 0,
+      expires_at DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE,
       FOREIGN KEY (uploaded_by_user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -160,6 +161,13 @@ export function initDatabase() {
       value TEXT NOT NULL
     );
   `);
+
+  // Safe schema migration for expires_at
+  try {
+    db.exec("ALTER TABLE files ADD COLUMN expires_at DATETIME;");
+  } catch {
+    // column already exists
+  }
 
   // Use INSERT OR IGNORE to prevent any unique constraint conflicts during multi-process builds
   const pinPartner1 = hashPin("123456");

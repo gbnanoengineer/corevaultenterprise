@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { compressAsset } from "@/lib/compression";
-import { saveAsset } from "@/lib/storage";
+import { saveAsset, purgeExpiredFiles } from "@/lib/storage";
 import path from "path";
 import crypto from "crypto";
 
@@ -12,6 +12,9 @@ export async function GET(req: Request) {
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // Auto-purge any files whose retention expiry period has lapsed
+    await purgeExpiredFiles();
 
     const { searchParams } = new URL(req.url);
     const folderId = searchParams.get("folderId");
@@ -36,7 +39,7 @@ export async function GET(req: Request) {
 
     const folders = db.prepare(folderQuery).all(...folderParams);
 
-    // Fetch files
+    // Fetch files (including expires_at)
     let fileQuery = `
       SELECT f.*, u.display_name as uploaded_by_name,
              (SELECT token FROM shared_links WHERE file_id = f.id AND is_active = 1 LIMIT 1) as share_token
@@ -103,6 +106,8 @@ export async function POST(req: Request) {
     const uploadedFile = formData.get("file") as File | null;
     const folderId = (formData.get("folderId") as string) || null;
     const isPrivate = formData.get("isPrivate") === "true" || formData.get("isPrivate") === "1" ? 1 : 0;
+    const expiryDays = formData.get("expiryDays") as string | null; // "never", "1", "7", "30", "90"
+    const customExpiryDate = formData.get("customExpiryDate") as string | null;
 
     if (!uploadedFile) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -121,6 +126,18 @@ export async function POST(req: Request) {
       );
     }
 
+    // Calculate expiry date if set
+    let expiresAt: string | null = null;
+    if (customExpiryDate) {
+      expiresAt = customExpiryDate;
+    } else if (expiryDays && expiryDays !== "never") {
+      const days = parseInt(expiryDays, 10);
+      if (!isNaN(days) && days > 0) {
+        const d = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+        expiresAt = d.toISOString().replace("T", " ").substring(0, 19);
+      }
+    }
+
     const rawBuffer = Buffer.from(await uploadedFile.arrayBuffer());
 
     // ASSET COMPRESSION PIPELINE: compress images with Sharp WebP, optimize payload
@@ -129,12 +146,12 @@ export async function POST(req: Request) {
     const fileId = "file_" + crypto.randomUUID().slice(0, 10);
     const storageFileName = `${fileId}_${path.basename(compressed.fileName).replace(/[^a-zA-Z0-9._-]/g, "_")}`;
 
-    // CLOUD BUCKET & DISK PERSISTENCE
+    // S3 CLOUD BUCKET & LOCAL DISK PERSISTENCE
     const stored = await saveAsset(compressed.buffer, storageFileName, compressed.mimeType);
 
     db.prepare(`
-      INSERT INTO files (id, name, original_name, mime_type, file_size, storage_path, folder_id, uploaded_by_user_id, is_private)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO files (id, name, original_name, mime_type, file_size, storage_path, folder_id, uploaded_by_user_id, is_private, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       fileId,
       compressed.fileName,
@@ -144,7 +161,8 @@ export async function POST(req: Request) {
       stored.storagePath,
       folderId,
       user.id,
-      isPrivate
+      isPrivate,
+      expiresAt
     );
 
     const created = db.prepare(`
@@ -164,6 +182,7 @@ export async function POST(req: Request) {
         savingsPercent: compressed.savingsPercent,
       },
       isCloudBucket: stored.isCloudBucket,
+      expiresAt,
     });
   } catch (error) {
     console.error("Files POST error:", error);

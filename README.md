@@ -49,27 +49,42 @@ A self-hosted, full-stack financial command center and document asset vault engi
 
 ---
 
-## Free Cloud Buckets & Cloud Database (Firebase)
+---
 
-The application features a hybrid storage architecture:
+## S3-Compatible Cloud Storage Buckets
 
-### 1. Free Storage Quotas (Firebase Spark Plan)
-- **Cloud Storage Bucket**: **5 GB free storage** + **1 GB/day download bandwidth** (completely free, no credit card required).
-- **Cloud Firestore Database**: **1 GB stored data** + **50,000 reads/day** + **20,000 writes/day**.
+Instead of proprietary vendor SDKs, the application uses the universal **AWS S3 API (`@aws-sdk/client-s3`)**, enabling compatibility with any S3-compatible bucket provider:
 
-### 2. How to Connect Firebase (3-Minute Setup)
-1. Go to [Firebase Console](https://console.firebase.google.com/) and create a project.
-2. In the left menu, enable **Storage** (Cloud Storage) in Test/Production mode.
-3. Go to **Project Settings** (gear icon) → **Service accounts** tab.
-4. Click **"Generate new private key"** to download the JSON service account.
-5. In your `.env` or `docker-compose.yml`, set the credentials:
+### 1. Recommended Free / Low-Cost S3 Buckets
+- **Cloudflare R2**: **10 GB free storage forever** with **$0 egress fees** (ideal for documents and client previews).
+- **MinIO**: Lightweight, open-source S3-compatible storage container for 100% self-hosted local deployments.
+- **AWS S3 / Wasabi / Backblaze B2 / Supabase Storage**: Fully supported out-of-the-box.
+
+### 2. Environment Configuration
+In your `.env` or `docker-compose.yml`:
 ```env
-FIREBASE_PROJECT_ID=your-project-id
-FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxx@your-project-id.iam.gserviceaccount.com
-FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEv...-----END PRIVATE KEY-----\n"
-FIREBASE_STORAGE_BUCKET=your-project-id.appspot.com
+S3_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com  # Or http://minio:9000 for local MinIO
+S3_ACCESS_KEY_ID=your-s3-access-key-id
+S3_SECRET_ACCESS_KEY=your-s3-secret-access-key
+S3_BUCKET_NAME=expense-vault-assets
+S3_REGION=auto
+S3_FORCE_PATH_STYLE=false
 ```
-*Note: If Firebase credentials are not provided, the application automatically uses local Docker volume storage (`./data/uploads`) with zero degradation.*
+*Note: If S3 environment variables are omitted, the application seamlessly stores all assets in the local persistent Docker volume (`./data/uploads`) with zero downtime.*
+
+---
+
+## File Auto-Expiry & Retention Policy Engine
+
+You can set retention lifecycles when uploading any document:
+- **Presets Available**:
+  - `Permanent (Never Expire)`
+  - `24 Hours (Temporary Client Deliverable)`
+  - `7 Days (Weekly Review)`
+  - `30 Days (Monthly Deliverable)`
+  - `90 Days (Quarterly Retention)`
+  - `Custom Date`
+- **Automated Lifecycle Purge**: The system continuously purges expired assets from both the **S3 Cloud Storage Bucket** and the host disk, and revokes any associated public client share links.
 
 ---
 
@@ -79,7 +94,7 @@ All incoming assets pass through an automatic optimization pipeline powered by *
 - **Automatic WebP Conversion**: Raster images (`.png`, `.jpg`, `.jpeg`, `.tiff`) are converted to modern WebP (quality 82).
 - **Smart Resizing**: Images wider than 2048px are resized to prevent 20MB camera uploads from consuming bucket storage.
 - **Metadata Stripping**: All EXIF/GPS metadata is stripped for partner privacy and minimal payload.
-- **Real-World Savings**: Typically **60% to 92% reduction** in asset file size before uploading to the bucket or disk.
+- **Real-World Savings**: Verified **60% to 92% reduction** in asset file size before uploading to the bucket or disk.
 - **Document Fidelity**: PDFs, Excel spreadsheets, Word docs, and code files are preserved untouched to guarantee preview accuracy.
 
 ---
@@ -87,9 +102,9 @@ All incoming assets pass through an automatic optimization pipeline powered by *
 ## Automated On-Delete Cleanup Policy
 
 To eliminate orphaned files and prevent runaway storage consumption:
-1. **Single File Deletion**: When any file is deleted, the system purges the physical asset from both the **Firebase Cloud Storage Bucket** and the local volume, and revokes any associated public share links.
+1. **Single File Deletion**: When any file is deleted, the system purges the physical asset from both the **S3 Cloud Storage Bucket** and local volume, and revokes all associated public share links.
 2. **Cascading Folder Deletion**: When a folder is deleted, the system recursively finds all child files and subfolders, and purges all underlying bucket objects in a batch operation.
-3. **Expense Receipt Cleanup**: When an expense is deleted, if its attached receipt is not shared by other expenses, the receipt asset is automatically purged from storage.
+3. **Expense Receipt Cleanup**: When an expense is deleted, if its attached receipt is not shared by other expenses, the receipt asset is automatically purged from the S3 bucket.
 
 ---
 
