@@ -6,12 +6,33 @@ import {
   DeleteObjectsCommand,
 } from "@aws-sdk/client-s3";
 
-const S3_ENDPOINT = process.env.S3_ENDPOINT || process.env.AWS_ENDPOINT_URL;
-const S3_REGION = process.env.S3_REGION || "auto";
-const S3_ACCESS_KEY_ID = process.env.S3_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
-const S3_SECRET_ACCESS_KEY = process.env.S3_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
-const S3_BUCKET_NAME = process.env.S3_BUCKET_NAME || "expense-vault-assets";
-const S3_FORCE_PATH_STYLE = process.env.S3_FORCE_PATH_STYLE === "true" || !!S3_ENDPOINT?.includes("minio");
+// Support both standard S3 env naming and the exact variables in your .env:
+// S3_ACCESS_KEY, S3_SECRET-KEY, BUCKET_NAME, S3_URL
+const S3_ENDPOINT =
+  process.env.S3_URL ||
+  process.env.S3_ENDPOINT ||
+  process.env.AWS_ENDPOINT_URL;
+
+const S3_ACCESS_KEY_ID =
+  process.env.S3_ACCESS_KEY ||
+  process.env.S3_ACCESS_KEY_ID ||
+  process.env.AWS_ACCESS_KEY_ID;
+
+const S3_SECRET_ACCESS_KEY =
+  process.env["S3_SECRET-KEY"] ||
+  process.env.S3_SECRET_KEY ||
+  process.env.S3_SECRET_ACCESS_KEY ||
+  process.env.AWS_SECRET_ACCESS_KEY;
+
+const S3_BUCKET_NAME =
+  process.env.BUCKET_NAME ||
+  process.env.S3_BUCKET_NAME ||
+  "expanse";
+
+const S3_REGION = process.env.S3_REGION || "us-east-1";
+
+// Custom S3 / MinIO / sslip.io endpoints require path-style routing
+const S3_FORCE_PATH_STYLE = true;
 
 export const isS3Configured = Boolean(
   S3_ACCESS_KEY_ID && S3_SECRET_ACCESS_KEY && S3_BUCKET_NAME
@@ -30,7 +51,7 @@ if (isS3Configured) {
       },
       forcePathStyle: S3_FORCE_PATH_STYLE,
     });
-    console.log(`S3-compatible bucket client initialized for bucket: ${S3_BUCKET_NAME}`);
+    console.log(`S3-compatible bucket client successfully connected to: ${S3_BUCKET_NAME} @ ${S3_ENDPOINT || "default"}`);
   } catch (err) {
     console.warn("Failed to initialize S3 client:", err);
   }
@@ -49,7 +70,7 @@ export async function uploadToS3(key: string, buffer: Buffer, contentType: strin
     );
     return true;
   } catch (err) {
-    console.error(`Error uploading ${key} to S3 bucket:`, err);
+    console.error(`Error uploading ${key} to S3 bucket (${S3_BUCKET_NAME}):`, err);
     return false;
   }
 }
@@ -107,4 +128,4 @@ export async function deleteMultipleFromS3(keys: string[]): Promise<number> {
   }
 }
 
-export { S3_BUCKET_NAME, s3Client };
+export { S3_BUCKET_NAME, S3_ENDPOINT, s3Client };
