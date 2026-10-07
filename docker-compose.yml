@@ -11,6 +11,11 @@ services:
       - NODE_ENV=production
       - DATA_DIR=/app/data
       - PORT=3000
+      # Optional: Firebase Free Tier Cloud DB & Storage Buckets
+      - FIREBASE_PROJECT_ID=${FIREBASE_PROJECT_ID:-}
+      - FIREBASE_CLIENT_EMAIL=${FIREBASE_CLIENT_EMAIL:-}
+      - FIREBASE_PRIVATE_KEY=${FIREBASE_PRIVATE_KEY:-}
+      - FIREBASE_STORAGE_BUCKET=${FIREBASE_STORAGE_BUCKET:-}
     volumes:
       # Persistent local storage for SQLite database and uploaded documents
       - ./data:/app/data

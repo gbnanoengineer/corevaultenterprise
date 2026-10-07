@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { db, UPLOADS_DIR } from "@/lib/db";
-import fs from "fs";
-import path from "path";
+import { db } from "@/lib/db";
+import { getAssetBuffer, deleteAsset } from "@/lib/storage";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -21,12 +20,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       }
     }
 
-    const filePath = path.join(UPLOADS_DIR, file.storage_path);
-    if (!fs.existsSync(filePath)) {
-      return new NextResponse("File data missing on server", { status: 404 });
+    const buffer = await getAssetBuffer(file.storage_path);
+    if (!buffer) {
+      return new NextResponse("File data missing in storage", { status: 404 });
     }
 
-    const buffer = fs.readFileSync(filePath);
     const { searchParams } = new URL(req.url);
     const isDownload = searchParams.get("download") === "1";
 
@@ -34,7 +32,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       ? `attachment; filename="${encodeURIComponent(file.original_name)}"`
       : `inline; filename="${encodeURIComponent(file.original_name)}"`;
 
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type": file.mime_type || "application/octet-stream",
         "Content-Disposition": disposition,
@@ -61,19 +59,18 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       return NextResponse.json({ error: "File not found" }, { status: 404 });
     }
 
-    // Delete from disk if exists
-    const filePath = path.join(UPLOADS_DIR, file.storage_path);
-    if (fs.existsSync(filePath)) {
-      try {
-        fs.unlinkSync(filePath);
-      } catch (err) {
-        console.error("Failed to delete physical file:", err);
-      }
+    // ON-DELETE CLEANUP: Delete asset from Cloud Storage Bucket and local storage
+    if (file.storage_path) {
+      await deleteAsset(file.storage_path);
     }
 
+    // Remove any shared links associated with this file
+    db.prepare("DELETE FROM shared_links WHERE file_id = ?").run(id);
+
+    // Delete record from database
     db.prepare("DELETE FROM files WHERE id = ?").run(id);
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, message: "File and bucket asset deleted successfully" });
   } catch (error) {
     console.error("File delete error:", error);
     return NextResponse.json({ error: "Failed to delete file" }, { status: 500 });

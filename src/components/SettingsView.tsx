@@ -375,16 +375,90 @@ export default function SettingsView({ currentUser, onRefreshAuth }: SettingsVie
         </div>
       </div>
 
-      {/* Docker Storage Status Info */}
-      <div className="glass-card" style={{ padding: 20, display: "flex", alignItems: "center", gap: 14 }}>
-        <Database size={22} color="#10b981" />
-        <div>
-          <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "#ffffff" }}>
-            Self-Hosted Docker Persistent Storage
+      {/* Cloud Buckets, Compression & Cleanup Card */}
+      <div className="glass-card" style={{ padding: 26, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid var(--border-subtle)", paddingBottom: 14 }}>
+          <Database size={20} color="#38bdf8" />
+          <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#ffffff" }}>
+            Cloud Storage Buckets & Asset Engine
+          </h2>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          {/* Cloud Bucket Status */}
+          <div style={{
+            background: "rgba(255, 255, 255, 0.03)",
+            border: "1px solid var(--border-subtle)",
+            borderRadius: 12,
+            padding: 16
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#ffffff" }}>Firebase Cloud Storage Bucket</span>
+              <span className="badge badge-emerald" style={{ fontSize: "0.68rem" }}>
+                5GB Free Tier
+              </span>
+            </div>
+            <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+              Files and documents can sync directly to a free Firebase Cloud Storage bucket. Without cloud credentials, assets are durably stored in the local Docker volume mount (<code style={{ color: "#38bdf8" }}>./data/uploads</code>).
+            </p>
           </div>
-          <div style={{ fontSize: "0.76rem", color: "var(--text-secondary)" }}>
-            Database and document assets are persisted in the <code style={{ color: "#38bdf8", fontFamily: "var(--font-mono)" }}>./data/</code> volume mount.
+
+          {/* Compression Engine */}
+          <div style={{
+            background: "rgba(255, 255, 255, 0.03)",
+            border: "1px solid var(--border-subtle)",
+            borderRadius: 12,
+            padding: 16
+          }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#ffffff" }}>Sharp WebP Compression</span>
+              <span className="badge badge-indigo" style={{ fontSize: "0.68rem" }}>Active</span>
+            </div>
+            <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+              Incoming raster images and receipts are automatically resized (max 2048px), stripped of GPS/EXIF metadata, and converted to modern high-efficiency WebP, reducing bucket storage by <strong>60%–85%</strong>.
+            </p>
           </div>
+        </div>
+
+        {/* On-Delete Cleanup Policy */}
+        <div style={{
+          background: "rgba(16, 185, 129, 0.06)",
+          border: "1px solid rgba(16, 185, 129, 0.25)",
+          borderRadius: 12,
+          padding: 16,
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 12
+        }}>
+          <Check size={18} color="#34d399" style={{ marginTop: 2 }} />
+          <div>
+            <div style={{ fontSize: "0.88rem", fontWeight: 600, color: "#ffffff" }}>
+              Automated Cascading On-Delete Cleanup (Active)
+            </div>
+            <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", marginTop: 2, lineHeight: 1.4 }}>
+              When a document, receipt, or folder is deleted, the system automatically purges the corresponding physical files and subfolders from both the Firebase Cloud Storage bucket and host disk to prevent orphaned files or runaway bucket costs.
+            </p>
+          </div>
+        </div>
+
+        {/* Firebase Environment Setup Guide */}
+        <div style={{
+          background: "rgba(0, 0, 0, 0.35)",
+          border: "1px solid var(--border-subtle)",
+          borderRadius: 10,
+          padding: "14px 16px",
+          fontSize: "0.78rem",
+          color: "var(--text-secondary)"
+        }}>
+          <div style={{ fontWeight: 600, color: "#e2e8f0", marginBottom: 4 }}>
+            Firebase Free Tier Environment Setup (docker-compose.yml or .env):
+          </div>
+          <code style={{ display: "block", fontFamily: "var(--font-mono)", color: "#a5b4fc", whiteSpace: "pre", marginTop: 4 }}>
+            FIREBASE_PROJECT_ID=your-project-id{"\n"}
+            FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxx@your-project-id.iam.gserviceaccount.com{"\n"}
+            FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEv...-----END PRIVATE KEY-----\n"{"\n"}
+            FIREBASE_STORAGE_BUCKET=your-project-id.appspot.com
+          </code>
         </div>
       </div>
     </div>

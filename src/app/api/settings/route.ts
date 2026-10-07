@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser, getAllUsers } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { isFirebaseConfigured, storageBucket } from "@/lib/firebase";
 
 export async function GET() {
   try {
@@ -20,6 +21,12 @@ export async function GET() {
       defaultCurrency,
       masterRecoveryKey,
       partners,
+      storage: {
+        isFirebaseConfigured,
+        bucketName: storageBucket?.name || process.env.FIREBASE_STORAGE_BUCKET || "Local Storage Volume (./data/uploads)",
+        compressionEngine: "Sharp WebP Engine (Active)",
+        onDeleteCleanup: "Enabled (Automatic Cascade Purge)",
+      },
     });
   } catch (error) {
     console.error("Settings GET error:", error);

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { db, UPLOADS_DIR } from "@/lib/db";
-import fs from "fs";
+import { db } from "@/lib/db";
+import { getAssetBuffer } from "@/lib/storage";
 import path from "path";
 import * as XLSX from "xlsx";
 import mammoth from "mammoth";
@@ -43,9 +43,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     // If this is a file share link: provide preview content if applicable
     let previewData: any = null;
     if (link.file_id && link.storage_path) {
-      const filePath = path.join(UPLOADS_DIR, link.storage_path);
-      if (fs.existsSync(filePath)) {
-        const ext = path.extname(link.file_orig_name).toLowerCase();
+      const buffer = await getAssetBuffer(link.storage_path);
+      if (buffer) {
+        const ext = path.extname(link.file_orig_name || link.file_name).toLowerCase();
         const mime = link.file_mime || "";
 
         if (mime.startsWith("image/") || [".png", ".jpg", ".jpeg", ".webp", ".svg"].includes(ext)) {
@@ -53,7 +53,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
         } else if (mime === "application/pdf" || ext === ".pdf") {
           previewData = { type: "pdf", url: `/api/share/${token}/file/${link.file_id}` };
         } else if ([".xlsx", ".xls", ".csv"].includes(ext)) {
-          const buffer = fs.readFileSync(filePath);
           const workbook = XLSX.read(buffer, { type: "buffer" });
           const sheets: Record<string, any[]> = {};
           workbook.SheetNames.forEach((name) => {
@@ -61,12 +60,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
           });
           previewData = { type: "excel", sheetNames: workbook.SheetNames, sheets };
         } else if (ext === ".docx") {
-          const buffer = fs.readFileSync(filePath);
           const result = await mammoth.convertToHtml({ buffer });
           previewData = { type: "word", html: result.value };
         } else if (mime.startsWith("text/") || [".json", ".js", ".ts", ".py", ".md", ".txt", ".yml", ".yaml"].includes(ext)) {
-          const content = fs.readFileSync(filePath, "utf-8");
-          previewData = { type: "code", content, ext };
+          previewData = { type: "code", content: buffer.toString("utf-8"), ext };
         }
       }
     }

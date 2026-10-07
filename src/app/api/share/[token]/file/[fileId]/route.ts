@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { db, UPLOADS_DIR } from "@/lib/db";
-import fs from "fs";
-import path from "path";
+import { db } from "@/lib/db";
+import { getAssetBuffer } from "@/lib/storage";
 
 export async function GET(req: Request, { params }: { params: Promise<{ token: string; fileId: string }> }) {
   try {
@@ -27,12 +26,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       return new NextResponse("Unauthorized access to this file", { status: 403 });
     }
 
-    const filePath = path.join(UPLOADS_DIR, file.storage_path);
-    if (!fs.existsSync(filePath)) {
-      return new NextResponse("File data missing on server", { status: 404 });
+    const buffer = await getAssetBuffer(file.storage_path);
+    if (!buffer) {
+      return new NextResponse("File data missing in storage", { status: 404 });
     }
 
-    const buffer = fs.readFileSync(filePath);
     const { searchParams } = new URL(req.url);
     const isDownload = searchParams.get("download") === "1";
 
@@ -40,7 +38,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
       ? `attachment; filename="${encodeURIComponent(file.original_name)}"`
       : `inline; filename="${encodeURIComponent(file.original_name)}"`;
 
-    return new NextResponse(buffer, {
+    return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type": file.mime_type || "application/octet-stream",
         "Content-Disposition": disposition,

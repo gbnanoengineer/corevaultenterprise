@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { db, UPLOADS_DIR } from "@/lib/db";
-import fs from "fs";
+import { db } from "@/lib/db";
+import { compressAsset } from "@/lib/compression";
+import { saveAsset } from "@/lib/storage";
 import path from "path";
 import crypto from "crypto";
 
@@ -13,7 +14,7 @@ export async function GET(req: Request) {
     }
 
     const { searchParams } = new URL(req.url);
-    const folderId = searchParams.get("folderId"); // null or folder string id
+    const folderId = searchParams.get("folderId");
     const search = searchParams.get("search");
 
     // Fetch folders
@@ -59,7 +60,7 @@ export async function GET(req: Request) {
 
     const files = db.prepare(fileQuery).all(...fileParams);
 
-    // Current folder info if inside a folder
+    // Current folder info and breadcrumbs
     let currentFolder = null;
     let breadcrumbs: any[] = [];
     if (folderId) {
@@ -108,35 +109,39 @@ export async function POST(req: Request) {
     }
 
     const originalName = uploadedFile.name;
-    const mimeType = uploadedFile.type || "application/octet-stream";
+    const rawMimeType = uploadedFile.type || "application/octet-stream";
     const extension = path.extname(originalName).toLowerCase();
 
-    // STRICT CHECK: Disallow audio files per user's explicit rule
+    // STRICT AUDIO RESTRICTION per requirement
     const audioExtensions = [".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".wma", ".opus"];
-    if (mimeType.startsWith("audio/") || audioExtensions.includes(extension)) {
+    if (rawMimeType.startsWith("audio/") || audioExtensions.includes(extension)) {
       return NextResponse.json(
         { error: "Audio files are strictly not permitted in this vault. Supported formats: PDF, Word, Excel, PowerPoint, Images, and Code documents." },
         { status: 400 }
       );
     }
 
-    const buffer = Buffer.from(await uploadedFile.arrayBuffer());
-    const fileId = "file_" + crypto.randomUUID().slice(0, 10);
-    const storageFileName = `${fileId}_${path.basename(originalName).replace(/[^a-zA-Z0-9._-]/g, "_")}`;
-    const storageFilePath = path.join(UPLOADS_DIR, storageFileName);
+    const rawBuffer = Buffer.from(await uploadedFile.arrayBuffer());
 
-    fs.writeFileSync(storageFilePath, buffer);
+    // ASSET COMPRESSION PIPELINE: compress images with Sharp WebP, optimize payload
+    const compressed = await compressAsset(rawBuffer, originalName, rawMimeType);
+
+    const fileId = "file_" + crypto.randomUUID().slice(0, 10);
+    const storageFileName = `${fileId}_${path.basename(compressed.fileName).replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+
+    // CLOUD BUCKET & DISK PERSISTENCE
+    const stored = await saveAsset(compressed.buffer, storageFileName, compressed.mimeType);
 
     db.prepare(`
       INSERT INTO files (id, name, original_name, mime_type, file_size, storage_path, folder_id, uploaded_by_user_id, is_private)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       fileId,
+      compressed.fileName,
       originalName,
-      originalName,
-      mimeType,
-      buffer.length,
-      storageFileName,
+      compressed.mimeType,
+      compressed.compressedSize,
+      stored.storagePath,
       folderId,
       user.id,
       isPrivate
@@ -149,7 +154,17 @@ export async function POST(req: Request) {
       WHERE f.id = ?
     `).get(fileId);
 
-    return NextResponse.json({ success: true, file: created });
+    return NextResponse.json({
+      success: true,
+      file: created,
+      compression: {
+        wasCompressed: compressed.wasCompressed,
+        originalSize: compressed.originalSize,
+        compressedSize: compressed.compressedSize,
+        savingsPercent: compressed.savingsPercent,
+      },
+      isCloudBucket: stored.isCloudBucket,
+    });
   } catch (error) {
     console.error("Files POST error:", error);
     return NextResponse.json({ error: "Failed to upload file" }, { status: 500 });

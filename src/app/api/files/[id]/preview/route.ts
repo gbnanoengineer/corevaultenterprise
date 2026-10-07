@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { db, UPLOADS_DIR } from "@/lib/db";
-import fs from "fs";
+import { db } from "@/lib/db";
+import { getAssetBuffer } from "@/lib/storage";
 import path from "path";
 import * as XLSX from "xlsx";
 import mammoth from "mammoth";
@@ -23,9 +23,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       }
     }
 
-    const filePath = path.join(UPLOADS_DIR, file.storage_path);
-    if (!fs.existsSync(filePath)) {
-      return NextResponse.json({ error: "File data missing on server" }, { status: 404 });
+    const buffer = await getAssetBuffer(file.storage_path);
+    if (!buffer) {
+      return NextResponse.json({ error: "File data missing in storage" }, { status: 404 });
     }
 
     const ext = path.extname(file.original_name).toLowerCase();
@@ -56,13 +56,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       mime.includes("excel") ||
       mime.includes("csv")
     ) {
-      const buffer = fs.readFileSync(filePath);
       const workbook = XLSX.read(buffer, { type: "buffer" });
       const sheets: Record<string, any[]> = {};
 
       workbook.SheetNames.forEach((sheetName) => {
         const worksheet = workbook.Sheets[sheetName];
-        // Convert to array of arrays (rows)
         const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
         sheets[sheetName] = rows;
       });
@@ -77,7 +75,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
     // 4. Word Documents (.docx)
     if (ext === ".docx") {
-      const buffer = fs.readFileSync(filePath);
       const result = await mammoth.convertToHtml({ buffer });
       return NextResponse.json({
         type: "word",
@@ -110,7 +107,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     };
 
     if (codeExtensions[ext] || mime.startsWith("text/")) {
-      const content = fs.readFileSync(filePath, "utf-8");
+      const content = buffer.toString("utf-8");
       return NextResponse.json({
         type: "code",
         file,

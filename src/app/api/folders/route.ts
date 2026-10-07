@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { deleteMultipleAssets } from "@/lib/storage";
 import crypto from "crypto";
 
 export async function POST(req: Request) {
@@ -42,15 +43,48 @@ export async function DELETE(req: Request) {
     }
 
     const { searchParams } = new URL(req.url);
-    const id = searchParams.get("id");
+    const folderId = searchParams.get("id");
 
-    if (!id) {
+    if (!folderId) {
       return NextResponse.json({ error: "Folder ID required" }, { status: 400 });
     }
 
-    db.prepare("DELETE FROM folders WHERE id = ?").run(id);
+    // ON-DELETE RECURSIVE CLEANUP: Collect all descendant folders & files
+    const allFolderIds: string[] = [folderId];
+    let toCheck = [folderId];
 
-    return NextResponse.json({ success: true });
+    while (toCheck.length > 0) {
+      const currentId = toCheck.pop();
+      const children = db.prepare("SELECT id FROM folders WHERE parent_id = ?").all(currentId) as any[];
+      for (const child of children) {
+        allFolderIds.push(child.id);
+        toCheck.push(child.id);
+      }
+    }
+
+    // Find all files in these folders
+    const placeholders = allFolderIds.map(() => "?").join(",");
+    const filesToDelete = db.prepare(
+      `SELECT storage_path FROM files WHERE folder_id IN (${placeholders})`
+    ).all(...allFolderIds) as any[];
+
+    const storagePaths = filesToDelete.map((f) => f.storage_path).filter(Boolean);
+
+    // Delete bucket objects and physical files
+    if (storagePaths.length > 0) {
+      await deleteMultipleAssets(storagePaths);
+    }
+
+    // Delete files and folders records
+    db.prepare(`DELETE FROM files WHERE folder_id IN (${placeholders})`).run(...allFolderIds);
+    db.prepare(`DELETE FROM shared_links WHERE folder_id IN (${placeholders})`).run(...allFolderIds);
+    db.prepare(`DELETE FROM folders WHERE id IN (${placeholders})`).run(...allFolderIds);
+
+    return NextResponse.json({
+      success: true,
+      cleanedFilesCount: storagePaths.length,
+      message: `Deleted folder and cleaned ${storagePaths.length} bucket assets.`,
+    });
   } catch (error) {
     console.error("Folders DELETE error:", error);
     return NextResponse.json({ error: "Failed to delete folder" }, { status: 500 });
