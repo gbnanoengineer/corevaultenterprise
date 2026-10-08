@@ -31,9 +31,8 @@ const DB_PATH =
   process.env.DATABASE_PATH ||
   (fs.existsSync(legacyDbPath) ? legacyDbPath : defaultDbPath);
 
-// Dokploy internal PostgreSQL cluster configuration
-const DOKPLOY_PG_URL = "postgresql://postgres:B5yuK4BctpYsfcF8C1kS@jiora-tools-corevault-enterprise-rfb0k4:5432/postgres";
-const PG_URL = process.env.DATABASE_URL || (process.env.NODE_ENV === "production" ? DOKPLOY_PG_URL : "");
+// PostgreSQL cluster configuration (configured via DATABASE_URL)
+const PG_URL = process.env.DATABASE_URL || "";
 
 let pgConnected = false;
 if (PG_URL) {

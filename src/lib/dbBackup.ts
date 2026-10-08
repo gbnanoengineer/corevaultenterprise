@@ -47,9 +47,11 @@ export function getDatabaseStats() {
 
   return {
     engine: isPg
-      ? "PostgreSQL (Dokploy Internal Cluster: jiora-tools-corevault-enterprise-rfb0k4)"
+      ? "PostgreSQL Cluster"
       : "SQLite 3 (WAL Mode, High Concurrency)",
-    dbPath: isPg ? "postgresql://postgres:***@jiora-tools-corevault-enterprise-rfb0k4:5432/postgres" : DB_PATH,
+    dbPath: isPg
+      ? (process.env.DATABASE_URL ? process.env.DATABASE_URL.replace(/:[^:@]+@/, ":***@") : "PostgreSQL")
+      : DB_PATH,
     fileSize,
     fileSizeFormatted: formatBytes(fileSize),
     tablesCount: tables.length,
