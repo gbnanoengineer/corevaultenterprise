@@ -107,8 +107,18 @@ export async function GET() {
       }
     }
 
+    // Query distinct years dynamically based on real data
+    const yearRows = db.prepare(`
+      SELECT DISTINCT substr(date, 1, 4) as year
+      FROM settlements
+      WHERE organization_id = ? AND date IS NOT NULL AND length(date) >= 4
+      ORDER BY year DESC
+    `).all(orgId) as { year: string }[];
+    const availableYears = yearRows.map((r) => r.year).filter((y) => /^\d{4}$/.test(y));
+
     return NextResponse.json({
       settlements,
+      availableYears,
       balances: {
         p1PaidOutPocket,
         p2PaidOutPocket,

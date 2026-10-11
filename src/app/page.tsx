@@ -67,8 +67,14 @@ export default function Home() {
     if (!currentUser) return;
     try {
       const res = await fetch("/api/dashboard");
+      if (!res.ok) {
+        console.error("Dashboard fetch error:", res.status, res.statusText);
+        return;
+      }
       const data = await res.json();
-      setDashboardData(data);
+      if (data && data.metrics) {
+        setDashboardData(data);
+      }
     } catch (err) {
       console.error("Dashboard fetch error:", err);
     }
@@ -277,10 +283,9 @@ export default function Home() {
       {/* Footer */}
       <footer className="desktop-only" style={{
         borderTop: "1px solid var(--border-subtle)",
-        padding: "16px 24px",
-        textAlign: "center",
+        padding: "14px 24px",
         color: "var(--text-muted)",
-        fontSize: "0.78rem",
+        fontSize: "0.75rem",
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
@@ -288,41 +293,36 @@ export default function Home() {
         margin: "0 auto",
         width: "100%"
       }}>
-        <div>
-          {activeOrganization?.name || orgName} &bull; ExpenseTracker & AssetVault
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>
+            {activeOrganization?.name || orgName}
+          </span>
+          <span>&bull;</span>
+          <span>CoreVault Enterprise Finance OS &amp; Asset Vault</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span>Docker Ready</span>
-          <span>&bull;</span>
-          <span>SQLite WAL Persistent</span>
-          <span>&bull;</span>
-          <span style={{ color: "#34d399" }}>Connected</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "3px 10px",
+            borderRadius: 6,
+            background: "rgba(16, 185, 129, 0.08)",
+            border: "1px solid rgba(16, 185, 129, 0.2)",
+            fontSize: "0.72rem",
+            color: "#34d399",
+            fontWeight: 600
+          }}>
+            <span className="status-dot status-dot-active" />
+            <span>System Active</span>
+          </div>
         </div>
       </footer>
 
       {/* Create Organization Modal */}
       {createOrgModalOpen && (
-        <div style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0, 0, 0, 0.75)",
-          backdropFilter: "blur(12px)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000,
-          padding: 20
-        }}>
-          <div style={{
-            width: "100%",
-            maxWidth: 440,
-            background: "#0f172a",
-            border: "1px solid rgba(255, 255, 255, 0.12)",
-            borderRadius: 18,
-            padding: 28,
-            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.8)",
-            position: "relative"
-          }}>
+        <div className="modal-overlay" style={{ zIndex: 1000 }}>
+          <div className="modal-container" style={{ maxWidth: 440, position: "relative" }}>
             <button
               onClick={() => setCreateOrgModalOpen(false)}
               style={{

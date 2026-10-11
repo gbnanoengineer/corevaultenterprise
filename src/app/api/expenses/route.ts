@@ -17,7 +17,8 @@ export async function GET(req: Request) {
     const category = searchParams.get("category");
     const paidBy = searchParams.get("paidBy");
     const search = searchParams.get("search");
-    const month = searchParams.get("month"); // YYYY-MM
+    const month = searchParams.get("month");
+    const year = searchParams.get("year");
 
     let query = `
       SELECT e.*, u.display_name as paid_by_name, u.avatar_color as paid_by_color,
@@ -41,9 +42,20 @@ export async function GET(req: Request) {
       query += ` AND (e.title LIKE ? OR e.notes LIKE ?)`;
       params.push(`%${search}%`, `%${search}%`);
     }
-    if (month) {
+    if (year && year !== "all" && month && month !== "all") {
       query += ` AND e.date LIKE ?`;
-      params.push(`${month}%`);
+      params.push(`${year}-${month.padStart(2, "0")}%`);
+    } else if (year && year !== "all") {
+      query += ` AND e.date LIKE ?`;
+      params.push(`${year}%`);
+    } else if (month && month !== "all") {
+      if (month.includes("-")) {
+        query += ` AND e.date LIKE ?`;
+        params.push(`${month}%`);
+      } else {
+        query += ` AND e.date LIKE ?`;
+        params.push(`%-${month.padStart(2, "0")}-%`);
+      }
     }
 
     query += ` ORDER BY e.date DESC, e.created_at DESC`;
@@ -69,8 +81,18 @@ export async function GET(req: Request) {
 
     const overallTotal = db.prepare(`SELECT SUM(amount) as total FROM expenses WHERE organization_id = ?`).get(orgId) as { total: number | null };
 
+    // Query distinct years dynamically based on real data
+    const yearRows = db.prepare(`
+      SELECT DISTINCT substr(date, 1, 4) as year
+      FROM expenses
+      WHERE organization_id = ? AND date IS NOT NULL AND length(date) >= 4
+      ORDER BY year DESC
+    `).all(orgId) as { year: string }[];
+    const availableYears = yearRows.map((r) => r.year).filter((y) => /^\d{4}$/.test(y));
+
     return NextResponse.json({
       expenses,
+      availableYears,
       summary: {
         overallTotal: overallTotal?.total || 0,
         totalsByCategory,

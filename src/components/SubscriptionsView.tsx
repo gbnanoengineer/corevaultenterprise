@@ -13,7 +13,11 @@ import {
   Trash2,
   Edit2,
   X,
-  Sparkles
+  Sparkles,
+  Search,
+  Filter,
+  Download,
+  RotateCcw
 } from "lucide-react";
 import ConfirmModal from "./ConfirmModal";
 import { BrandIcon, AI_SUBSCRIPTION_PRESETS } from "./AiBrandIcons";
@@ -30,6 +34,12 @@ export default function SubscriptionsView({
   const [subscriptions, setSubscriptions] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // Filters
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [cycleFilter, setCycleFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const [showModal, setShowModal] = useState(isAddModalOpenInitially);
   const [editingSub, setEditingSub] = useState<any>(null);
@@ -175,6 +185,66 @@ export default function SubscriptionsView({
     return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   };
 
+  const categoriesList = Array.from(new Set(subscriptions.map((s) => s.category).filter(Boolean)));
+
+  const filteredSubscriptions = subscriptions.filter((sub) => {
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const matchName = (sub.name || "").toLowerCase().includes(q);
+      const matchCategory = (sub.category || "").toLowerCase().includes(q);
+      const matchPayment = (sub.payment_method || "").toLowerCase().includes(q);
+      const matchNotes = (sub.notes || "").toLowerCase().includes(q);
+      if (!matchName && !matchCategory && !matchPayment && !matchNotes) return false;
+    }
+    if (categoryFilter !== "all" && sub.category?.toLowerCase() !== categoryFilter.toLowerCase()) {
+      return false;
+    }
+    if (cycleFilter !== "all" && sub.billing_cycle?.toLowerCase() !== cycleFilter.toLowerCase()) {
+      return false;
+    }
+    if (statusFilter === "active" && !sub.active) return false;
+    if (statusFilter === "paused" && sub.active) return false;
+    if (statusFilter === "renewing_soon") {
+      const days = getDaysUntilRenewal(sub.next_renewal_date);
+      if (days < 0 || days > 7) return false;
+    }
+    return true;
+  });
+
+  const handleResetFilters = () => {
+    setSearch("");
+    setCategoryFilter("all");
+    setCycleFilter("all");
+    setStatusFilter("all");
+  };
+
+  const hasActiveFilters = Boolean(search) || categoryFilter !== "all" || cycleFilter !== "all" || statusFilter !== "all";
+
+  const exportCSV = () => {
+    if (subscriptions.length === 0) return;
+    const headers = ["Tool Name", "Category", "Cost", "Currency", "Billing Cycle", "Next Renewal", "Payment Method", "Status", "Notes", "URL"];
+    const rows = filteredSubscriptions.map((s) => [
+      `"${(s.name || "").replace(/"/g, '""')}"`,
+      `"${(s.category || "").replace(/"/g, '""')}"`,
+      s.cost,
+      s.currency || currency || "USD",
+      s.billing_cycle,
+      s.next_renewal_date,
+      `"${(s.payment_method || "").replace(/"/g, '""')}"`,
+      s.active ? "Active" : "Paused",
+      `"${(s.notes || "").replace(/"/g, '""')}"`,
+      `"${(s.url || "").replace(/"/g, '""')}"`,
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `subscriptions_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {/* Header */}
@@ -188,20 +258,32 @@ export default function SubscriptionsView({
           </p>
         </div>
 
-        <button
-          id="btn-add-subscription-modal"
-          onClick={handleOpenAdd}
-          className="btn-primary"
-          style={{ fontSize: "0.85rem", padding: "9px 14px" }}
-        >
-          <Plus size={16} />
-          <span>New Subscription</span>
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            id="btn-export-sub-csv"
+            onClick={exportCSV}
+            className="btn-secondary"
+            style={{ fontSize: "0.85rem", padding: "9px 14px" }}
+          >
+            <Download size={15} />
+            <span>Export CSV</span>
+          </button>
+
+          <button
+            id="btn-add-subscription-modal"
+            onClick={handleOpenAdd}
+            className="btn-primary"
+            style={{ fontSize: "0.85rem", padding: "9px 14px" }}
+          >
+            <Plus size={16} />
+            <span>New Subscription</span>
+          </button>
+        </div>
       </div>
 
       {/* Burn Rate Cards */}
       {summary && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+        <div className="responsive-stats-grid">
           <div className="glass-card" style={{ padding: 18, borderLeft: "4px solid #38bdf8" }}>
             <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", textTransform: "uppercase" }}>Monthly Recurring Burn</div>
             <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#38bdf8", marginTop: 4 }}>
@@ -223,9 +305,107 @@ export default function SubscriptionsView({
         </div>
       )}
 
+      {/* Filter Toolbar */}
+      <div className="glass-card" style={{ padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 260, flexWrap: "wrap" }}>
+          {/* Search Box */}
+          <div style={{ position: "relative", width: "100%", maxWidth: 280, flex: "1 1 180px" }}>
+            <Search size={16} color="var(--text-muted)" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+            <input
+              id="input-search-subscriptions"
+              type="text"
+              placeholder="Search tool name, category, notes..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="input-field"
+              style={{ paddingLeft: 36, height: 40 }}
+            />
+          </div>
+
+          {/* Category Dropdown */}
+          <select
+            id="select-filter-sub-category"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="input-field"
+            style={{ height: 40, width: "auto", minWidth: 140, flex: "1 1 120px" }}
+          >
+            <option value="all">All Categories</option>
+            {categoriesList.map((cat: any) => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+
+          {/* Billing Cycle Filter */}
+          <select
+            id="select-filter-sub-cycle"
+            value={cycleFilter}
+            onChange={(e) => setCycleFilter(e.target.value)}
+            className="input-field"
+            style={{ height: 40, width: "auto", minWidth: 130, flex: "1 1 110px" }}
+          >
+            <option value="all">All Cycles</option>
+            <option value="monthly">Monthly</option>
+            <option value="quarterly">Quarterly</option>
+            <option value="annual">Annual</option>
+          </select>
+
+          {/* Status Filter */}
+          <select
+            id="select-filter-sub-status"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="input-field"
+            style={{ height: 40, width: "auto", minWidth: 140, flex: "1 1 120px" }}
+          >
+            <option value="all">All Statuses</option>
+            <option value="active">Active Only</option>
+            <option value="paused">Paused Only</option>
+            <option value="renewing_soon">Renewing Soon (&le; 7d)</option>
+          </select>
+
+          {/* Reset Filters */}
+          {hasActiveFilters && (
+            <button
+              id="btn-reset-sub-filters"
+              onClick={handleResetFilters}
+              className="btn-secondary"
+              style={{
+                height: 40,
+                padding: "0 12px",
+                fontSize: "0.82rem",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                color: "#f87171",
+                borderColor: "rgba(239, 68, 68, 0.3)",
+              }}
+            >
+              <RotateCcw size={13} />
+              <span>Reset</span>
+            </button>
+          )}
+        </div>
+
+        <div style={{ fontSize: "0.84rem", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+          Showing: <strong className="tabular-nums" style={{ color: "#ffffff", fontSize: "0.96rem" }}>{filteredSubscriptions.length}</strong> of {subscriptions.length} tools
+        </div>
+      </div>
+
       {/* Subscriptions Grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
-        {subscriptions.map((sub) => {
+      {filteredSubscriptions.length === 0 ? (
+        <div className="glass-card" style={{ padding: 48, textAlign: "center", color: "var(--text-secondary)" }}>
+          <p style={{ fontSize: "1rem", fontWeight: 600, color: "#ffffff", marginBottom: 6 }}>No subscriptions match your filters</p>
+          <p style={{ fontSize: "0.84rem", margin: "0 0 16px 0" }}>Try adjusting your search query, category, or cycle filters.</p>
+          {hasActiveFilters && (
+            <button onClick={handleResetFilters} className="btn-secondary" style={{ fontSize: "0.84rem", margin: "0 auto" }}>
+              Reset Filters
+            </button>
+          )}
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", gap: 16 }}>
+          {filteredSubscriptions.map((sub) => {
           const daysLeft = getDaysUntilRenewal(sub.next_renewal_date);
           const isUrgent = daysLeft >= 0 && daysLeft <= 7;
           return (
@@ -334,29 +514,12 @@ export default function SubscriptionsView({
           );
         })}
       </div>
+      )}
 
       {/* Add / Edit Subscription Modal */}
       {showModal && (
-        <div style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0, 0, 0, 0.75)",
-          backdropFilter: "blur(8px)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 100,
-          padding: 20,
-        }}>
-          <div style={{
-            width: "100%",
-            maxWidth: 500,
-            background: "#0f172a",
-            border: "1px solid var(--border-medium)",
-            borderRadius: 20,
-            padding: 28,
-            boxShadow: "0 20px 50px rgba(0, 0, 0, 0.7)",
-          }}>
+        <div className="modal-overlay">
+          <div className="modal-container" style={{ maxWidth: 500 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
               <h3 style={{ fontSize: "1.15rem", fontWeight: 700, color: "#ffffff" }}>
                 {editingSub ? "Edit Subscription" : "Add Recurring SaaS Tool"}
@@ -426,7 +589,7 @@ export default function SubscriptionsView({
                 />
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="responsive-grid-equal">
                 <div>
                   <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
                     Cost *
@@ -460,7 +623,7 @@ export default function SubscriptionsView({
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="responsive-grid-equal">
                 <div>
                   <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
                     Category

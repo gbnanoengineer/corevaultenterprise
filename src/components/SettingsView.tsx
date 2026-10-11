@@ -19,10 +19,7 @@ import {
   Copy,
   Download,
   HardDrive,
-  CloudUpload,
-  RefreshCw,
   FileCode,
-  Cpu,
   UserMinus,
   Trash2
 } from "lucide-react";
@@ -160,75 +157,6 @@ export default function SettingsView({
   const [passwordMessage, setPasswordMessage] = useState("");
   const [passwordError, setPasswordError] = useState("");
 
-  // Database Persistence & Dumps State
-  const [dbStats, setDbStats] = useState<any>(null);
-  const [dbLoading, setDbLoading] = useState(false);
-  const [dbActionMsg, setDbActionMsg] = useState("");
-  const [dbActionError, setDbActionError] = useState("");
-
-  const fetchDbStats = async () => {
-    try {
-      const res = await fetch("/api/admin/database?action=stats");
-      if (res.ok) {
-        const data = await res.json();
-        setDbStats(data.stats);
-      }
-    } catch (e) {
-      console.warn("Failed to fetch DB stats:", e);
-    }
-  };
-
-  const handleBackupToS3 = async () => {
-    setDbLoading(true);
-    setDbActionMsg("");
-    setDbActionError("");
-    try {
-      const res = await fetch("/api/admin/database", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "backup_to_s3" }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Backup failed");
-      setDbActionMsg(data.message || "Database snapshot successfully synced to S3 Cloud!");
-      fetchDbStats();
-    } catch (err: any) {
-      setDbActionError(err.message || "Failed to backup database to S3");
-    } finally {
-      setDbLoading(false);
-    }
-  };
-
-  const handleRestoreFromS3 = () => {
-    showConfirmModal({
-      title: "Restore Cloud Snapshot",
-      message: "Are you sure you want to restore the database from the latest cloud S3 backup snapshot? Any local changes since the last backup will be overwritten.",
-      confirmText: "Restore Database",
-      variant: "warning",
-      onConfirm: async () => {
-        setDbLoading(true);
-        setDbActionMsg("");
-        setDbActionError("");
-        try {
-          const res = await fetch("/api/admin/database", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "restore_from_s3" }),
-          });
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || "Restore failed");
-          setDbActionMsg(data.message || "Database successfully restored from S3!");
-          fetchDbStats();
-          onRefreshAuth();
-        } catch (err: any) {
-          setDbActionError(err.message || "Failed to restore database from S3");
-        } finally {
-          setDbLoading(false);
-        }
-      },
-    });
-  };
-
   const fetchSettingsAndOrg = async () => {
     try {
       setLoading(true);
@@ -257,7 +185,6 @@ export default function SettingsView({
 
   useEffect(() => {
     fetchSettingsAndOrg();
-    fetchDbStats();
   }, []);
 
   const handleSaveGeneral = async (e: React.FormEvent) => {
@@ -473,9 +400,10 @@ export default function SettingsView({
           padding: 16,
           borderRadius: 12,
           border: "1px solid var(--border-subtle)",
-          alignItems: "flex-end"
+          alignItems: "flex-end",
+          flexWrap: "wrap",
         }}>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
             <label style={{ fontSize: "0.76rem", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
               Invite Colleague by Email (Dispatches via Resend)
             </label>
@@ -756,7 +684,7 @@ export default function SettingsView({
           <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#ffffff" }}>Organization & Currencies</h2>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 16 }}>
+        <div className="responsive-grid-2col">
           <div>
             <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
               Organization / Company Name
@@ -819,7 +747,7 @@ export default function SettingsView({
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+        <div className="responsive-grid-3col">
           <div>
             <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
               Current Password
@@ -911,279 +839,47 @@ export default function SettingsView({
         </div>
       </form>
 
-      {/* Resend Email Configuration Card */}
-      <div className="glass-card" style={{ padding: 26, display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid var(--border-subtle)", paddingBottom: 14 }}>
-          <Mail size={20} color="#38bdf8" />
-          <div>
-            <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#ffffff" }}>
-              Resend Transactional Email Engine
-            </h2>
-            <span style={{ fontSize: "0.76rem", color: "var(--text-muted)" }}>
-              Powers OTP verification codes, invitations, and password recovery
-            </span>
-          </div>
-        </div>
-
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 14,
-        }}>
-          <div style={{ background: "rgba(255, 255, 255, 0.03)", padding: 14, borderRadius: 10, border: "1px solid var(--border-subtle)" }}>
-            <span style={{ fontSize: "0.74rem", color: "var(--text-muted)", display: "block" }}>Provider</span>
-            <span style={{ fontSize: "0.88rem", fontWeight: 600, color: "#ffffff" }}>Resend.com API</span>
-          </div>
-          <div style={{ background: "rgba(255, 255, 255, 0.03)", padding: 14, borderRadius: 10, border: "1px solid var(--border-subtle)" }}>
-            <span style={{ fontSize: "0.74rem", color: "var(--text-muted)", display: "block" }}>Sender Address</span>
-            <span style={{ fontSize: "0.88rem", fontWeight: 600, color: "#38bdf8" }}>
-              no-reply@jioratech.com
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Cloud Buckets, Compression & Cleanup Card */}
+      {/* Data Export & Offline Archival */}
       <div className="glass-card" style={{ padding: 26, display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid var(--border-subtle)", paddingBottom: 14 }}>
-          <Database size={20} color="#38bdf8" />
-          <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#ffffff" }}>
-            Cloud Storage Buckets & Asset Engine
-          </h2>
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <div style={{
-            background: "rgba(255, 255, 255, 0.03)",
-            border: "1px solid var(--border-subtle)",
-            borderRadius: 12,
-            padding: 16
-          }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#ffffff" }}>S3-Compatible Bucket</span>
-              <span className="badge badge-emerald" style={{ fontSize: "0.68rem" }}>
-                Connected
-              </span>
-            </div>
-            <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
-              Active storage bucket: <code style={{ color: "#38bdf8" }}>expanse</code>. Assets uploaded to Document Vault are mirrored directly to the S3 bucket.
-            </p>
-          </div>
-
-          <div style={{
-            background: "rgba(255, 255, 255, 0.03)",
-            border: "1px solid var(--border-subtle)",
-            borderRadius: 12,
-            padding: 16
-          }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "#ffffff" }}>File Auto-Expiry Engine</span>
-              <span className="badge badge-amber" style={{ fontSize: "0.68rem" }}>Active</span>
-            </div>
-            <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
-              Upload files with custom retention periods (24 hours, 7 days, 30 days, 90 days). Expired files are automatically purged from both the S3 bucket and disk storage.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Database Resilience, Cloud Persistence & SQL Migration Hub */}
-      <div className="glass-card" style={{ padding: 26, display: "flex", flexDirection: "column", gap: 18 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: "1px solid var(--border-subtle)", paddingBottom: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <HardDrive size={20} color="#818cf8" />
-            <div>
-              <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#ffffff", margin: 0 }}>
-                Database Persistence, Cloud S3 Snapshots & SQL Dumps
-              </h2>
-              <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
-                Zero-loss redeployment protection, ultra-low resource engine & seamless export migrations
-              </span>
-            </div>
-          </div>
-
-          <button
-            onClick={fetchDbStats}
-            title="Refresh database metrics"
-            style={{
-              background: "rgba(255, 255, 255, 0.05)",
-              border: "1px solid var(--border-subtle)",
-              color: "var(--text-secondary)",
-              padding: "6px 12px",
-              borderRadius: 8,
-              fontSize: "0.76rem",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              cursor: "pointer"
-            }}
-          >
-            <RefreshCw size={13} />
-            <span>Refresh</span>
-          </button>
-        </div>
-
-        {/* Live Resource Stats Row */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12 }}>
-          <div style={{ background: "rgba(255, 255, 255, 0.03)", padding: 14, borderRadius: 10, border: "1px solid var(--border-subtle)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-              <Cpu size={14} color="#38bdf8" />
-              <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>System Resource Load</span>
-            </div>
-            <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#34d399" }}>
-              {dbStats?.resourceLoad?.memoryUsedMb || "~15"} MB RAM
-            </div>
-            <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
-              Embedded in-process · 0 background daemons
-            </span>
-          </div>
-
-          <div style={{ background: "rgba(255, 255, 255, 0.03)", padding: 14, borderRadius: 10, border: "1px solid var(--border-subtle)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-              <Database size={14} color="#818cf8" />
-              <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>Database File Size</span>
-            </div>
-            <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#ffffff" }}>
-              {dbStats?.fileSizeFormatted || "1.3 MB"}
-            </div>
-            <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
-              {dbStats?.tablesCount || 14} tables · {dbStats?.totalRecords || 0} records
-            </span>
-          </div>
-
-          <div style={{ background: "rgba(255, 255, 255, 0.03)", padding: 14, borderRadius: 10, border: "1px solid var(--border-subtle)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-              <CloudUpload size={14} color="#ec4899" />
-              <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>S3 Cloud Backup</span>
-            </div>
-            <div style={{ fontSize: "1.1rem", fontWeight: 800, color: "#38bdf8" }}>
-              {dbStats?.s3Persistence?.isConfigured ? "Connected" : "Local Only"}
-            </div>
-            <span style={{ fontSize: "0.72rem", color: "var(--text-secondary)" }}>
-              Auto-restore on redeployment active
+          <HardDrive size={20} color="#818cf8" />
+          <div>
+            <h2 style={{ fontSize: "1.05rem", fontWeight: 700, color: "#ffffff", margin: 0 }}>
+              Data Export & Offline Archival
+            </h2>
+            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+              Download complete database snapshots or SQL schemas for offline backup
             </span>
           </div>
         </div>
 
-        {/* Feedback alerts */}
-        {dbActionMsg && (
-          <div style={{
-            background: "rgba(16, 185, 129, 0.1)",
-            border: "1px solid rgba(16, 185, 129, 0.3)",
-            color: "#34d399",
-            padding: "10px 14px",
-            borderRadius: 8,
-            fontSize: "0.82rem",
-            display: "flex",
-            alignItems: "center",
-            gap: 8
-          }}>
-            <CheckCircle2 size={16} />
-            <span>{dbActionMsg}</span>
-          </div>
-        )}
-
-        {dbActionError && (
-          <div style={{
-            background: "rgba(239, 68, 68, 0.1)",
-            border: "1px solid rgba(239, 68, 68, 0.3)",
-            color: "#f87171",
-            padding: "10px 14px",
-            borderRadius: 8,
-            fontSize: "0.82rem",
-            display: "flex",
-            alignItems: "center",
-            gap: 8
-          }}>
-            <AlertCircle size={16} />
-            <span>{dbActionError}</span>
-          </div>
-        )}
-
-        {/* Action Buttons Grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
-          {/* Cloud Backup Button */}
-          <button
-            onClick={handleBackupToS3}
-            disabled={dbLoading}
-            style={{
-              background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)",
-              border: "1px solid rgba(99, 102, 241, 0.4)",
-              color: "#c7d2fe",
-              padding: "12px 16px",
-              borderRadius: 10,
-              fontSize: "0.85rem",
-              fontWeight: 600,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-              cursor: dbLoading ? "not-allowed" : "pointer",
-              transition: "all 0.2s"
-            }}
-          >
-            <CloudUpload size={16} color="#818cf8" />
-            <span>{dbLoading ? "Syncing..." : "Sync Snapshot to Cloud S3 Now"}</span>
-          </button>
-
-          {/* Cloud Restore Button */}
-          <button
-            onClick={handleRestoreFromS3}
-            disabled={dbLoading}
-            style={{
-              background: "rgba(255, 255, 255, 0.04)",
-              border: "1px solid var(--border-subtle)",
-              color: "#ffffff",
-              padding: "12px 16px",
-              borderRadius: 10,
-              fontSize: "0.85rem",
-              fontWeight: 600,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 8,
-              cursor: dbLoading ? "not-allowed" : "pointer"
-            }}
-          >
-            <RefreshCw size={16} color="#38bdf8" />
-            <span>Restore Latest S3 Cloud Backup</span>
-          </button>
-
-          {/* Download SQL Dump Button */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
           <a
             href="/api/admin/database?action=download_sql"
             download
+            className="btn-secondary"
             style={{
-              background: "rgba(56, 189, 248, 0.08)",
-              border: "1px solid rgba(56, 189, 248, 0.3)",
-              color: "#38bdf8",
               padding: "12px 16px",
-              borderRadius: 10,
-              fontSize: "0.85rem",
-              fontWeight: 600,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               gap: 8,
-              textDecoration: "none"
+              textDecoration: "none",
+              color: "#38bdf8",
+              borderColor: "rgba(56, 189, 248, 0.3)",
+              background: "rgba(56, 189, 248, 0.05)"
             }}
           >
             <FileCode size={16} />
-            <span>Export ANSI SQL Dump (.sql)</span>
+            <span>Export SQL Dump (.sql)</span>
           </a>
 
-          {/* Download SQLite Binary Button */}
           <a
             href="/api/admin/database?action=download_db"
             download
+            className="btn-secondary"
             style={{
-              background: "rgba(255, 255, 255, 0.04)",
-              border: "1px solid var(--border-subtle)",
-              color: "#ffffff",
               padding: "12px 16px",
-              borderRadius: 10,
-              fontSize: "0.85rem",
-              fontWeight: 600,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -1192,24 +888,8 @@ export default function SettingsView({
             }}
           >
             <Download size={16} />
-            <span>Download SQLite Binary (.db)</span>
+            <span>Download Database (.db)</span>
           </a>
-        </div>
-
-        {/* Redeployment Architecture Advisory */}
-        <div style={{
-          background: "rgba(99, 102, 241, 0.07)",
-          border: "1px solid rgba(99, 102, 241, 0.2)",
-          borderRadius: 10,
-          padding: 14,
-          fontSize: "0.78rem",
-          color: "var(--text-secondary)",
-          lineHeight: 1.6
-        }}>
-          <strong style={{ color: "#c7d2fe", display: "block", marginBottom: 4 }}>
-            💡 Zero-Loss Cloud Redeployment Architecture:
-          </strong>
-          When deploying to Docker, Railway, Fly.io, or VPS, map a persistent volume to <code style={{ color: "#38bdf8" }}>DATA_DIR=/data</code> or <code style={{ color: "#38bdf8" }}>DATABASE_PATH=/data/corevault.db</code>. With your S3 credentials configured in <code style={{ color: "#38bdf8" }}>.env</code>, CoreVault also automatically detects fresh container redeployments and auto-restores your latest database snapshot from S3 upon startup. You can also download the <strong style={{ color: "#ffffff" }}>ANSI SQL Dump</strong> at any time to migrate your data to PostgreSQL, MySQL, Supabase, or Turso without lock-in.
         </div>
       </div>
 

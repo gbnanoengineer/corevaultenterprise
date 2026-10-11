@@ -24,13 +24,11 @@ export async function GET(req: Request) {
     }
 
     let otpDispatched = false;
-    let debugOtp: string | undefined = undefined;
 
     // If user does not yet exist and autoSend is requested, dispatch OTP immediately so user doesn't need to type anything
     if (autoSend && !details.userExists && details.email) {
       const otpRes = await generateAndSendOtp(details.email, "signup");
       otpDispatched = otpRes.success;
-      debugOtp = otpRes.otp;
     }
 
     return NextResponse.json({
@@ -40,7 +38,6 @@ export async function GET(req: Request) {
       orgName: details.orgName,
       userExists: details.userExists,
       otpDispatched,
-      debugOtp,
     });
   } catch (error) {
     console.error("Invite GET error:", error);

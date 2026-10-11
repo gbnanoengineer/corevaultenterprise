@@ -141,7 +141,7 @@ export default function ConfirmModal({
           </div>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", flexWrap: "wrap", gap: 10, marginTop: 12 }}>
           {!isAlertOnly && (
             <button
               onClick={onCancel}

@@ -88,9 +88,12 @@ export function convertSqlToPg(sql: string): string {
   }
 
   // Convert SQLite date functions
+  converted = converted.replace(/date\(\s*['"]now['"]\s*,\s*['"]([+-]?\d+)\s+([a-zA-Z]+)['"]\s*\)/gi, "((CURRENT_DATE + INTERVAL '$1 $2')::date)::text");
+  converted = converted.replace(/datetime\(\s*['"]now['"]\s*,\s*['"]([+-]?\d+)\s+([a-zA-Z]+)['"]\s*\)/gi, "(CURRENT_TIMESTAMP + INTERVAL '$1 $2')");
   converted = converted.replace(/datetime\(["']?now["']?\)/gi, "CURRENT_TIMESTAMP");
   converted = converted.replace(/date\(["']?now["']?\)/gi, "CURRENT_DATE");
   converted = converted.replace(/datetime\(([a-zA-Z0-9_.]+)\)/gi, "$1");
+  converted = converted.replace(/date\(([a-zA-Z0-9_.]+)\)/gi, "($1)::date");
 
   return converted;
 }

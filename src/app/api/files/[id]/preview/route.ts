@@ -5,6 +5,7 @@ import { getAssetBuffer } from "@/lib/storage";
 import path from "path";
 import * as XLSX from "xlsx";
 import mammoth from "mammoth";
+import JSZip from "jszip";
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -70,13 +71,23 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         type: "excel",
         file,
         sheetNames: workbook.SheetNames,
+        sheets,
         data: sheets,
       });
     }
 
     // 4. Word Documents (.docx)
     if (ext === ".docx" || mime.includes("wordprocessingml")) {
-      const docxResult = await mammoth.convertToHtml({ buffer });
+      const docxResult = await mammoth.convertToHtml(
+        { buffer },
+        {
+          convertImage: mammoth.images.imgElement((image) => {
+            return image.read("base64").then((imageBuffer) => ({
+              src: `data:${image.contentType};base64,${imageBuffer}`,
+            }));
+          }),
+        }
+      );
       return NextResponse.json({
         type: "word",
         file,
@@ -84,7 +95,47 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       });
     }
 
-    // 5. Code & Plain Text Documents
+    // 5. PowerPoint Presentations (.pptx)
+    if (ext === ".pptx" || mime.includes("presentationml")) {
+      try {
+        const zip = await JSZip.loadAsync(buffer);
+        const slideFiles = Object.keys(zip.files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/i.test(f));
+        slideFiles.sort((a, b) => {
+          const numA = parseInt(a.match(/slide(\d+)\.xml/)?.[1] || "0", 10);
+          const numB = parseInt(b.match(/slide(\d+)\.xml/)?.[1] || "0", 10);
+          return numA - numB;
+        });
+
+        const slides = [];
+        for (let i = 0; i < slideFiles.length; i++) {
+          const xml = await zip.files[slideFiles[i]].async("text");
+          const textMatches = Array.from(xml.matchAll(/<a:t[^>]*>([\s\S]*?)<\/a:t>/g)).map((m) => m[1]);
+          const cleanTexts = textMatches
+            .map((t) => t.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').trim())
+            .filter(Boolean);
+
+          const title = cleanTexts[0] || `Slide ${i + 1}`;
+          const content = cleanTexts.slice(1);
+
+          slides.push({
+            slideNumber: i + 1,
+            title,
+            content,
+          });
+        }
+
+        return NextResponse.json({
+          type: "presentation",
+          file,
+          slideCount: slides.length,
+          slides,
+        });
+      } catch (err: any) {
+        console.warn("PPTX parse fallback:", err.message);
+      }
+    }
+
+    // 6. Code & Plain Text Documents
     const codeExtensions = [
       ".txt", ".json", ".js", ".ts", ".jsx", ".tsx",
       ".html", ".css", ".scss", ".md", ".py", ".sql",

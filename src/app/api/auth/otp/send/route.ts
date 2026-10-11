@@ -22,7 +22,6 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       message: `A 6-digit verification code has been dispatched to ${email}.`,
-      debugOtp: process.env.NODE_ENV !== "production" ? result.otp : undefined,
     });
   } catch (error) {
     console.error("Send OTP error:", error);

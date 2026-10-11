@@ -13,12 +13,9 @@ export async function POST(req: Request) {
     const cleanEmail = email.trim().toLowerCase();
     const exists = checkEmailExists(cleanEmail);
 
-    let debugOtp: string | undefined = undefined;
-
     // If new email (register), automatically send OTP to verify email right away!
     if (!exists) {
-      const otpRes = await generateAndSendOtp(cleanEmail, "signup");
-      debugOtp = otpRes.otp;
+      await generateAndSendOtp(cleanEmail, "signup");
     }
 
     return NextResponse.json({
@@ -26,7 +23,6 @@ export async function POST(req: Request) {
       exists,
       email: cleanEmail,
       otpSent: !exists,
-      debugOtp: process.env.NODE_ENV !== "production" ? debugOtp : undefined,
     });
   } catch (error) {
     console.error("Check email error:", error);

@@ -22,6 +22,7 @@ import {
   CreditCard,
   User
 } from "lucide-react";
+import CoreVaultLogo, { CoreVaultIcon } from "./CoreVaultLogo";
 
 interface NavbarProps {
   currentTab: string;
@@ -117,36 +118,26 @@ export default function Navbar({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          height: 68
+          height: 64
         }}>
           {/* Brand & Organization Switcher */}
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={{
-              width: 40,
-              height: 40,
-              borderRadius: 10,
-              background: "linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 0 20px rgba(99, 102, 241, 0.4)"
-            }}>
-              <Layers size={22} color="#ffffff" />
-            </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <CoreVaultIcon size={36} iconSize={20} />
 
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontWeight: 800, fontSize: "1.08rem", letterSpacing: "-0.01em", color: "#ffffff" }}>
-                  CoreVault
+            <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                <span style={{ fontWeight: 800, fontSize: "1.02rem", letterSpacing: "-0.02em", color: "#ffffff" }}>
+                  Core<span style={{ color: "#38bdf8" }}>Vault</span>
                 </span>
                 <span style={{
-                  background: "linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%)",
+                  background: "linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(99, 102, 241, 0.15) 100%)",
                   color: "#38bdf8",
-                  fontSize: "0.68rem",
+                  fontSize: "0.64rem",
                   fontWeight: 700,
-                  padding: "2px 7px",
+                  letterSpacing: "0.05em",
+                  padding: "1.5px 6px",
                   borderRadius: 4,
-                  border: "1px solid rgba(56, 189, 248, 0.3)"
+                  border: "1px solid rgba(56, 189, 248, 0.25)"
                 }}>
                   WORKSPACE OS
                 </span>
@@ -160,23 +151,25 @@ export default function Navbar({
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
-                    gap: 6,
-                    background: "transparent",
-                    border: "none",
-                    padding: 0,
+                    gap: 5,
+                    background: "rgba(255, 255, 255, 0.03)",
+                    border: "1px solid rgba(255, 255, 255, 0.06)",
+                    borderRadius: 6,
+                    padding: "2px 7px",
                     cursor: "pointer",
                     color: "var(--text-secondary)",
-                    fontSize: "0.78rem"
+                    fontSize: "0.75rem",
+                    transition: "all 0.15s ease"
                   }}
                 >
-                  <Building size={13} color="#818cf8" />
+                  <Building size={12} color="#818cf8" />
                   <span style={{ color: "#ffffff", fontWeight: 600 }}>
                     {activeOrganization?.name || "My Organization"}
                   </span>
-                  <span style={{ color: "var(--text-muted)", fontSize: "0.72rem" }}>
+                  <span style={{ color: "var(--text-muted)", fontSize: "0.7rem" }}>
                     ({activeOrganization?.currency || "USD"})
                   </span>
-                  <ChevronDown size={13} color="var(--text-muted)" />
+                  <ChevronDown size={11} color="var(--text-muted)" />
                 </button>
 
                 {/* Organization Popover Menu */}
@@ -186,7 +179,7 @@ export default function Navbar({
                     top: "calc(100% + 8px)",
                     left: 0,
                     width: 270,
-                    background: "rgba(15, 23, 42, 0.98)",
+                    background: "rgba(11, 15, 25, 0.96)",
                     backdropFilter: "blur(20px)",
                     WebkitBackdropFilter: "blur(20px)",
                     border: "1px solid var(--border-medium)",
@@ -270,8 +263,16 @@ export default function Navbar({
             </div>
           </div>
 
-          {/* Navigation Tabs (Desktop) */}
-          <nav style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          {/* Navigation Tabs (Desktop Floating Segmented Dock) */}
+          <nav style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 2,
+            background: "rgba(255, 255, 255, 0.03)",
+            border: "1px solid rgba(255, 255, 255, 0.06)",
+            borderRadius: 10,
+            padding: 3
+          }}>
             {allTabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = currentTab === tab.id;
@@ -283,18 +284,19 @@ export default function Navbar({
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 8,
-                    padding: "8px 14px",
-                    borderRadius: 8,
-                    fontSize: "0.88rem",
+                    gap: 7,
+                    padding: "6px 13px",
+                    borderRadius: 7,
+                    fontSize: "0.84rem",
                     fontWeight: isActive ? 600 : 500,
                     color: isActive ? "#ffffff" : "var(--text-secondary)",
-                    background: isActive ? "rgba(99, 102, 241, 0.15)" : "transparent",
-                    border: isActive ? "1px solid rgba(99, 102, 241, 0.35)" : "1px solid transparent",
-                    transition: "all 0.18s ease"
+                    background: isActive ? "rgba(255, 255, 255, 0.09)" : "transparent",
+                    border: isActive ? "1px solid rgba(255, 255, 255, 0.12)" : "1px solid transparent",
+                    boxShadow: isActive ? "inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 2px 6px rgba(0, 0, 0, 0.3)" : "none",
+                    transition: "all 0.16s ease"
                   }}
                 >
-                  <Icon size={16} color={isActive ? "#818cf8" : "currentColor"} />
+                  <Icon size={15} color={isActive ? "#818cf8" : "currentColor"} />
                   {tab.label}
                 </button>
               );
@@ -302,35 +304,36 @@ export default function Navbar({
           </nav>
 
           {/* User Profile & Actions */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{
               display: "flex",
               alignItems: "center",
-              gap: 10,
-              padding: "5px 14px 5px 6px",
-              background: "rgba(255, 255, 255, 0.04)",
-              border: "1px solid var(--border-subtle)",
-              borderRadius: 30
+              gap: 9,
+              padding: "4px 12px 4px 5px",
+              background: "rgba(255, 255, 255, 0.03)",
+              border: "1px solid rgba(255, 255, 255, 0.07)",
+              borderRadius: 24
             }}>
               <div style={{
-                width: 30,
-                height: 30,
+                width: 28,
+                height: 28,
                 borderRadius: "50%",
                 background: currentUser?.avatar_color || "#3b82f6",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: "0.82rem",
+                fontSize: "0.78rem",
                 fontWeight: 700,
-                color: "#ffffff"
+                color: "#ffffff",
+                boxShadow: "0 0 0 2px rgba(255, 255, 255, 0.08)"
               }}>
                 {currentUser?.display_name?.charAt(0) || "U"}
               </div>
               <div style={{ display: "flex", flexDirection: "column" }}>
-                <span style={{ fontSize: "0.82rem", fontWeight: 600, lineHeight: 1.2 }}>
+                <span style={{ fontSize: "0.8rem", fontWeight: 600, lineHeight: 1.2 }}>
                   {currentUser?.display_name || "User"}
                 </span>
-                <span style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>
+                <span style={{ fontSize: "0.66rem", color: "var(--text-muted)" }}>
                   {currentUser?.email || "Active"}
                 </span>
               </div>
@@ -341,19 +344,30 @@ export default function Navbar({
               onClick={onLogout}
               title="Sign Out"
               style={{
-                width: 36,
-                height: 36,
+                width: 34,
+                height: 34,
                 borderRadius: 8,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                background: "rgba(244, 63, 94, 0.1)",
-                border: "1px solid rgba(244, 63, 94, 0.25)",
-                color: "#fb7185",
-                cursor: "pointer"
+                background: "rgba(255, 255, 255, 0.03)",
+                border: "1px solid rgba(255, 255, 255, 0.07)",
+                color: "var(--text-secondary)",
+                cursor: "pointer",
+                transition: "all 0.15s ease"
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = "#fb7185";
+                e.currentTarget.style.background = "rgba(244, 63, 94, 0.1)";
+                e.currentTarget.style.borderColor = "rgba(244, 63, 94, 0.3)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "var(--text-secondary)";
+                e.currentTarget.style.background = "rgba(255, 255, 255, 0.03)";
+                e.currentTarget.style.borderColor = "rgba(255, 255, 255, 0.07)";
               }}
             >
-              <LogOut size={16} />
+              <LogOut size={15} />
             </button>
           </div>
         </div>
@@ -379,38 +393,7 @@ export default function Navbar({
         }}
       >
         {/* Brand Left */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{
-            width: 34,
-            height: 34,
-            borderRadius: 9,
-            background: "linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "0 0 14px rgba(99, 102, 241, 0.4)"
-          }}>
-            <Layers size={18} color="#ffffff" />
-          </div>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ fontWeight: 800, fontSize: "1rem", color: "#ffffff", letterSpacing: "-0.01em" }}>
-                CoreVault
-              </span>
-              <span style={{
-                background: "rgba(99, 102, 241, 0.2)",
-                color: "#38bdf8",
-                fontSize: "0.62rem",
-                fontWeight: 700,
-                padding: "1px 5px",
-                borderRadius: 4,
-                border: "1px solid rgba(56, 189, 248, 0.25)"
-              }}>
-                ENTERPRISE
-              </span>
-            </div>
-          </div>
-        </div>
+        <CoreVaultLogo size="sm" badgeText="WORKSPACE" />
 
         {/* Right Action: Org Switcher Pill + Avatar */}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

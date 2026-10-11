@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getActiveOrgContext } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { db, isPostgresActive } from "@/lib/db";
 
 export async function GET() {
   try {
@@ -57,12 +57,13 @@ export async function GET() {
     });
 
     // Upcoming renewal alert in next 14 days
+    const in14Days = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
     const upcomingRenewals = db.prepare(`
       SELECT * FROM subscriptions
-      WHERE active = 1 AND organization_id = ? AND date(next_renewal_date) <= date('now', '+14 days')
+      WHERE active = 1 AND organization_id = ? AND next_renewal_date <= ?
       ORDER BY next_renewal_date ASC
       LIMIT 3
-    `).all(orgId);
+    `).all(orgId, in14Days);
 
     // Category breakdown
     const categoryBreakdown = db.prepare(`
@@ -168,6 +169,7 @@ export async function GET() {
         currency: activeOrg.currency,
         role: activeOrg.role,
       },
+      dbEngine: isPostgresActive() ? "PostgreSQL Cluster" : "SQLite 3 WAL",
     });
   } catch (error) {
     console.error("Dashboard GET error:", error);

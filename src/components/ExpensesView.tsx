@@ -14,8 +14,10 @@ import {
   Calendar,
   Tag,
   CheckCircle,
-  X
+  X,
+  RotateCcw
 } from "lucide-react";
+import { getDynamicYears, FILTER_MONTHS } from "@/lib/filterConstants";
 
 interface ExpensesViewProps {
   currentUser: any;
@@ -63,6 +65,9 @@ export default function ExpensesView({
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedPaidBy, setSelectedPaidBy] = useState("all");
+  const [selectedYear, setSelectedYear] = useState("all");
+  const [selectedMonth, setSelectedMonth] = useState("all");
+  const [serverYears, setServerYears] = useState<string[]>([]);
 
   // Modal state
   const [showModal, setShowModal] = useState(isAddModalOpenInitially);
@@ -87,10 +92,13 @@ export default function ExpensesView({
       if (search) params.set("search", search);
       if (selectedCategory !== "all") params.set("category", selectedCategory);
       if (selectedPaidBy !== "all") params.set("paidBy", selectedPaidBy);
+      if (selectedYear !== "all") params.set("year", selectedYear);
+      if (selectedMonth !== "all") params.set("month", selectedMonth);
 
       const res = await fetch(`/api/expenses?${params.toString()}`);
       const data = await res.json();
       setExpenses(data.expenses || []);
+      if (data.availableYears) setServerYears(data.availableYears);
       setSummary(data.summary || null);
     } catch (err) {
       console.error("Fetch expenses error:", err);
@@ -101,7 +109,22 @@ export default function ExpensesView({
 
   useEffect(() => {
     fetchExpenses();
-  }, [search, selectedCategory, selectedPaidBy]);
+  }, [search, selectedCategory, selectedPaidBy, selectedYear, selectedMonth]);
+
+  const handleResetFilters = () => {
+    setSearch("");
+    setSelectedCategory("all");
+    setSelectedPaidBy("all");
+    setSelectedYear("all");
+    setSelectedMonth("all");
+  };
+
+  const hasActiveFilters =
+    Boolean(search) ||
+    selectedCategory !== "all" ||
+    selectedPaidBy !== "all" ||
+    selectedYear !== "all" ||
+    selectedMonth !== "all";
 
   const handleOpenAdd = () => {
     setEditingExpense(null);
@@ -213,6 +236,8 @@ export default function ExpensesView({
     }).format(val || 0);
   };
 
+  const dynamicYearOptions = getDynamicYears(expenses, serverYears);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       {/* Header & Controls */}
@@ -251,8 +276,8 @@ export default function ExpensesView({
 
       {/* Filter Toolbar */}
       <div className="glass-card" style={{ padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 260 }}>
-          <div style={{ position: "relative", width: "100%", maxWidth: 300 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 260, flexWrap: "wrap" }}>
+          <div style={{ position: "relative", width: "100%", maxWidth: 300, flex: "1 1 200px" }}>
             <Search size={16} color="var(--text-muted)" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
             <input
               id="input-search-expenses"
@@ -261,7 +286,7 @@ export default function ExpensesView({
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="input-field"
-              style={{ paddingLeft: 36, height: 38 }}
+              style={{ paddingLeft: 36, height: 40 }}
             />
           </div>
 
@@ -271,11 +296,37 @@ export default function ExpensesView({
             value={selectedCategory}
             onChange={(e) => setSelectedCategory(e.target.value)}
             className="input-field"
-            style={{ height: 38, width: "auto", minWidth: 150 }}
+            style={{ height: 40, width: "auto", minWidth: 140, flex: "1 1 130px" }}
           >
             <option value="all">All Categories</option>
             {CATEGORIES.map((cat) => (
               <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+
+          {/* Year Filter */}
+          <select
+            id="select-filter-expense-year"
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(e.target.value)}
+            className="input-field"
+            style={{ height: 40, width: "auto", minWidth: 110, flex: "1 1 100px" }}
+          >
+            {dynamicYearOptions.map((y) => (
+              <option key={y.value} value={y.value}>{y.label}</option>
+            ))}
+          </select>
+
+          {/* Month Filter */}
+          <select
+            id="select-filter-expense-month"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="input-field"
+            style={{ height: 40, width: "auto", minWidth: 120, flex: "1 1 110px" }}
+          >
+            {FILTER_MONTHS.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
             ))}
           </select>
 
@@ -285,154 +336,236 @@ export default function ExpensesView({
             value={selectedPaidBy}
             onChange={(e) => setSelectedPaidBy(e.target.value)}
             className="input-field"
-            style={{ height: 38, width: "auto", minWidth: 140 }}
+            style={{ height: 40, width: "auto", minWidth: 130, flex: "1 1 120px" }}
           >
             <option value="all">All Payers</option>
             {partners.map((p) => (
               <option key={p.id} value={p.id}>{p.display_name}</option>
             ))}
           </select>
+
+          {/* Reset Filters */}
+          {hasActiveFilters && (
+            <button
+              id="btn-reset-expense-filters"
+              onClick={handleResetFilters}
+              className="btn-secondary"
+              style={{
+                height: 40,
+                padding: "0 12px",
+                fontSize: "0.82rem",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                color: "#f87171",
+                borderColor: "rgba(239, 68, 68, 0.3)",
+              }}
+            >
+              <RotateCcw size={13} />
+              <span>Reset</span>
+            </button>
+          )}
         </div>
 
         {summary && (
-          <div style={{ fontSize: "0.86rem", color: "var(--text-secondary)" }}>
-            Total Filtered: <strong style={{ color: "#ffffff", fontSize: "0.98rem" }}>{formatCurr(summary.overallTotal)}</strong> ({expenses.length} records)
+          <div style={{ fontSize: "0.84rem", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+            Total Filtered: <strong className="tabular-nums" style={{ color: "#ffffff", fontSize: "0.96rem" }}>{formatCurr(summary.overallTotal)}</strong> ({expenses.length} records)
           </div>
         )}
       </div>
 
-      {/* Expenses Table */}
-      <div className="glass-panel" style={{ overflow: "hidden" }}>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.88rem" }}>
-            <thead>
-              <tr style={{ background: "rgba(255, 255, 255, 0.03)", borderBottom: "1px solid var(--border-subtle)", color: "var(--text-muted)", fontSize: "0.76rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
-                <th style={{ padding: "14px 18px" }}>Expense Item</th>
-                <th style={{ padding: "14px 16px" }}>Category</th>
-                <th style={{ padding: "14px 16px" }}>Date</th>
-                <th style={{ padding: "14px 16px" }}>Paid By</th>
-                <th style={{ padding: "14px 16px" }}>Method & Split</th>
-                <th style={{ padding: "14px 16px", textAlign: "right" }}>Amount</th>
-                <th style={{ padding: "14px 18px", textAlign: "right" }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={7} style={{ padding: 40, textAlign: "center", color: "var(--text-secondary)" }}>
-                    Loading expenses...
-                  </td>
+      {/* Desktop Expenses Table */}
+      <div className="desktop-table-container">
+        <div className="glass-panel" style={{ overflow: "hidden" }}>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.88rem" }}>
+              <thead>
+                <tr style={{ background: "rgba(255, 255, 255, 0.03)", borderBottom: "1px solid var(--border-subtle)", color: "var(--text-muted)", fontSize: "0.76rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                  <th style={{ padding: "14px 18px" }}>Expense Item</th>
+                  <th style={{ padding: "14px 16px" }}>Category</th>
+                  <th style={{ padding: "14px 16px" }}>Date</th>
+                  <th style={{ padding: "14px 16px" }}>Paid By</th>
+                  <th style={{ padding: "14px 16px" }}>Method & Split</th>
+                  <th style={{ padding: "14px 16px", textAlign: "right" }}>Amount</th>
+                  <th style={{ padding: "14px 18px", textAlign: "right" }}>Actions</th>
                 </tr>
-              ) : expenses.length === 0 ? (
-                <tr>
-                  <td colSpan={7} style={{ padding: 40, textAlign: "center", color: "var(--text-secondary)" }}>
-                    No expenses found matching the selected filters.
-                  </td>
-                </tr>
-              ) : (
-                expenses.map((exp) => (
-                  <tr
-                    key={exp.id}
-                    style={{
-                      borderBottom: "1px solid var(--border-subtle)",
-                      transition: "background 0.15s ease",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.02)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                  >
-                    {/* Title & Notes */}
-                    <td style={{ padding: "14px 18px" }}>
-                      <div style={{ fontWeight: 600, color: "#ffffff" }}>{exp.title}</div>
-                      {exp.notes && (
-                        <div style={{ fontSize: "0.76rem", color: "var(--text-muted)", marginTop: 2 }}>
-                          {exp.notes}
-                        </div>
-                      )}
-                    </td>
-
-                    {/* Category */}
-                    <td style={{ padding: "14px 16px" }}>
-                      <span className="badge badge-indigo" style={{ fontSize: "0.72rem" }}>
-                        {exp.category}
-                      </span>
-                    </td>
-
-                    {/* Date */}
-                    <td style={{ padding: "14px 16px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
-                      {exp.date}
-                    </td>
-
-                    {/* Paid By */}
-                    <td style={{ padding: "14px 16px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{
-                          width: 24,
-                          height: 24,
-                          borderRadius: "50%",
-                          background: exp.paid_by_color || "#3b82f6",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: "0.7rem",
-                          fontWeight: 700,
-                          color: "#ffffff"
-                        }}>
-                          {exp.paid_by_name?.charAt(0) || "P"}
-                        </div>
-                        <span style={{ fontSize: "0.82rem", color: "#e2e8f0" }}>{exp.paid_by_name}</span>
-                      </div>
-                    </td>
-
-                    {/* Method & Split */}
-                    <td style={{ padding: "14px 16px" }}>
-                      <div style={{ fontSize: "0.8rem", color: "#e2e8f0" }}>{exp.payment_method}</div>
-                      <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
-                        {exp.split_type === "equal" ? "Split 50/50" : "100% Company Expense"}
-                      </div>
-                    </td>
-
-                    {/* Amount */}
-                    <td style={{ padding: "14px 16px", textAlign: "right" }}>
-                      <span style={{ fontWeight: 700, fontSize: "0.98rem", color: "#ffffff" }}>
-                        {formatCurr(exp.amount)}
-                      </span>
-                    </td>
-
-                    {/* Actions */}
-                    <td style={{ padding: "14px 18px", textAlign: "right" }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
-                        <button
-                          onClick={() => handleOpenEdit(exp)}
-                          title="Edit"
-                          style={{
-                            padding: 6,
-                            borderRadius: 6,
-                            color: "var(--text-secondary)",
-                            background: "rgba(255, 255, 255, 0.04)"
-                          }}
-                        >
-                          <Edit2 size={14} />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(exp.id)}
-                          title="Delete"
-                          style={{
-                            padding: 6,
-                            borderRadius: 6,
-                            color: "#fb7185",
-                            background: "rgba(244, 63, 94, 0.1)"
-                          }}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr>
+                    <td colSpan={7} style={{ padding: 40, textAlign: "center", color: "var(--text-secondary)" }}>
+                      Loading expenses...
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : expenses.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} style={{ padding: 40, textAlign: "center", color: "var(--text-secondary)" }}>
+                      No expenses found matching the selected filters.
+                    </td>
+                  </tr>
+                ) : (
+                  expenses.map((exp) => (
+                    <tr
+                      key={exp.id}
+                      style={{
+                        borderBottom: "1px solid var(--border-subtle)",
+                        transition: "background 0.15s ease",
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.02)")}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                    >
+                      {/* Title & Notes */}
+                      <td style={{ padding: "14px 18px" }}>
+                        <div style={{ fontWeight: 600, color: "#ffffff" }}>{exp.title}</div>
+                        {exp.notes && (
+                          <div style={{ fontSize: "0.76rem", color: "var(--text-muted)", marginTop: 2 }}>
+                            {exp.notes}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Category */}
+                      <td style={{ padding: "14px 16px" }}>
+                        <span className="badge badge-indigo" style={{ fontSize: "0.72rem" }}>
+                          {exp.category}
+                        </span>
+                      </td>
+
+                      {/* Date */}
+                      <td style={{ padding: "14px 16px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                        {exp.date}
+                      </td>
+
+                      {/* Paid By */}
+                      <td style={{ padding: "14px 16px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{
+                            width: 24,
+                            height: 24,
+                            borderRadius: "50%",
+                            background: exp.paid_by_color || "#3b82f6",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "0.7rem",
+                            fontWeight: 700,
+                            color: "#ffffff"
+                          }}>
+                            {exp.paid_by_name?.charAt(0) || "P"}
+                          </div>
+                          <span style={{ fontSize: "0.82rem", color: "#e2e8f0" }}>{exp.paid_by_name}</span>
+                        </div>
+                      </td>
+
+                      {/* Method & Split */}
+                      <td style={{ padding: "14px 16px" }}>
+                        <div style={{ fontSize: "0.8rem", color: "#e2e8f0" }}>{exp.payment_method}</div>
+                        <div style={{ fontSize: "0.72rem", color: "var(--text-muted)" }}>
+                          {exp.split_type === "equal" ? "Split 50/50" : "100% Company Expense"}
+                        </div>
+                      </td>
+
+                      {/* Amount */}
+                      <td className="tabular-nums" style={{ padding: "14px 16px", textAlign: "right" }}>
+                        <span style={{ fontWeight: 700, fontSize: "0.98rem", color: "#ffffff" }}>
+                          {formatCurr(exp.amount)}
+                        </span>
+                      </td>
+
+                      {/* Actions */}
+                      <td style={{ padding: "14px 18px", textAlign: "right" }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
+                          <button
+                            onClick={() => handleOpenEdit(exp)}
+                            title="Edit"
+                            style={{
+                              padding: 6,
+                              borderRadius: 6,
+                              color: "var(--text-secondary)",
+                              background: "rgba(255, 255, 255, 0.04)"
+                            }}
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(exp.id)}
+                            title="Delete"
+                            style={{
+                              padding: 6,
+                              borderRadius: 6,
+                              color: "#fb7185",
+                              background: "rgba(244, 63, 94, 0.1)"
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
+      </div>
+
+      {/* Mobile Expenses Card List (< 900px) */}
+      <div className="mobile-card-list">
+        {loading ? (
+          <div className="glass-card" style={{ padding: 30, textAlign: "center", color: "var(--text-secondary)" }}>
+            Loading expenses...
+          </div>
+        ) : expenses.length === 0 ? (
+          <div className="glass-card" style={{ padding: 30, textAlign: "center", color: "var(--text-secondary)" }}>
+            No expenses found matching filters.
+          </div>
+        ) : (
+          expenses.map((exp) => (
+            <div key={exp.id} className="glass-card" style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontWeight: 700, fontSize: "0.94rem", color: "#ffffff", wordBreak: "break-word" }}>
+                    {exp.title}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                    <span className="badge badge-indigo" style={{ fontSize: "0.68rem" }}>{exp.category}</span>
+                    <span style={{ fontSize: "0.74rem", color: "var(--text-muted)" }}>• {exp.date}</span>
+                  </div>
+                </div>
+                <div className="tabular-nums" style={{ fontSize: "1.05rem", fontWeight: 800, color: "#ffffff", flexShrink: 0 }}>
+                  {formatCurr(exp.amount)}
+                </div>
+              </div>
+
+              {exp.notes && (
+                <div style={{ fontSize: "0.76rem", color: "var(--text-muted)", background: "rgba(255, 255, 255, 0.02)", padding: "6px 10px", borderRadius: 6 }}>
+                  {exp.notes}
+                </div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: "1px solid var(--border-subtle)", fontSize: "0.75rem" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ width: 20, height: 20, borderRadius: "50%", background: exp.paid_by_color || "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#ffffff", fontSize: "0.65rem", fontWeight: 700 }}>
+                    {exp.paid_by_name?.charAt(0) || "P"}
+                  </div>
+                  <span style={{ color: "var(--text-secondary)" }}>
+                    {exp.paid_by_name} ({exp.split_type === "equal" ? "50/50" : "Company"})
+                  </span>
+                </div>
+
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => handleOpenEdit(exp)} className="btn-secondary" style={{ padding: "4px 10px", fontSize: "0.74rem" }}>
+                    Edit
+                  </button>
+                  <button onClick={() => handleDelete(exp.id)} className="btn-secondary" style={{ padding: "4px 10px", fontSize: "0.74rem", color: "#fb7185" }}>
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       {/* Add / Edit Expense Modal */}

@@ -9,8 +9,13 @@ import {
   AlertCircle,
   Calendar,
   Wallet,
-  X
+  X,
+  Search,
+  Filter,
+  Download,
+  RotateCcw
 } from "lucide-react";
+import { getDynamicYears } from "@/lib/filterConstants";
 
 interface SettlementsViewProps {
   currentUser: any;
@@ -25,6 +30,12 @@ export default function SettlementsView({
 }: SettlementsViewProps) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // Filters
+  const [search, setSearch] = useState("");
+  const [yearFilter, setYearFilter] = useState("all");
+  const [partnerFilter, setPartnerFilter] = useState("all");
+  const [serverYears, setServerYears] = useState<string[]>([]);
 
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({
@@ -42,6 +53,7 @@ export default function SettlementsView({
       const res = await fetch("/api/settlements");
       const result = await res.json();
       setData(result);
+      if (result.availableYears) setServerYears(result.availableYears);
     } catch (err) {
       console.error("Fetch settlements error:", err);
     } finally {
@@ -113,6 +125,54 @@ export default function SettlementsView({
   }
 
   const { balances, settlements } = data;
+  const dynamicYearOptions = getDynamicYears(settlements, serverYears);
+
+  const filteredSettlements = settlements.filter((st: any) => {
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const matchNotes = (st.notes || "").toLowerCase().includes(q);
+      const matchFrom = (st.from_user_name || "").toLowerCase().includes(q);
+      const matchTo = (st.to_user_name || "").toLowerCase().includes(q);
+      const matchAmount = st.amount?.toString().includes(q);
+      if (!matchNotes && !matchFrom && !matchTo && !matchAmount) return false;
+    }
+    if (yearFilter !== "all" && !st.date?.startsWith(yearFilter)) {
+      return false;
+    }
+    if (partnerFilter !== "all" && st.from_user_id !== partnerFilter && st.to_user_id !== partnerFilter) {
+      return false;
+    }
+    return true;
+  });
+
+  const handleResetFilters = () => {
+    setSearch("");
+    setYearFilter("all");
+    setPartnerFilter("all");
+  };
+
+  const hasActiveFilters = Boolean(search) || yearFilter !== "all" || partnerFilter !== "all";
+
+  const exportCSV = () => {
+    if (filteredSettlements.length === 0) return;
+    const headers = ["Date", "Paid From", "Paid To", "Amount", "Currency", "Notes"];
+    const rows = filteredSettlements.map((st: any) => [
+      st.date,
+      `"${(st.from_user_name || "").replace(/"/g, '""')}"`,
+      `"${(st.to_user_name || "").replace(/"/g, '""')}"`,
+      st.amount,
+      st.currency || currency || "USD",
+      `"${(st.notes || "").replace(/"/g, '""')}"`,
+    ]);
+    const csvContent = "data:text/csv;charset=utf-8," + [headers.join(","), ...rows.map((r: any) => r.join(","))].join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `settlements_${new Date().toISOString().split("T")[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -127,15 +187,27 @@ export default function SettlementsView({
           </p>
         </div>
 
-        <button
-          id="btn-log-settlement-modal"
-          onClick={handleOpenSettle}
-          className="btn-primary"
-          style={{ fontSize: "0.85rem", padding: "9px 14px" }}
-        >
-          <Scale size={16} />
-          <span>Record Settlement Payout</span>
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            id="btn-export-settle-csv"
+            onClick={exportCSV}
+            className="btn-secondary"
+            style={{ fontSize: "0.85rem", padding: "9px 14px" }}
+          >
+            <Download size={15} />
+            <span>Export CSV</span>
+          </button>
+
+          <button
+            id="btn-log-settlement-modal"
+            onClick={handleOpenSettle}
+            className="btn-primary"
+            style={{ fontSize: "0.85rem", padding: "9px 14px" }}
+          >
+            <Scale size={16} />
+            <span>Record Settlement Payout</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Settlement Highlight Spotlight */}
@@ -202,7 +274,7 @@ export default function SettlementsView({
       </div>
 
       {/* Partner Comparison Breakdown Cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <div className="responsive-grid-equal">
         {/* Partner 1 Card */}
         {p1 && (
           <div className="glass-card" style={{ padding: 22 }}>
@@ -277,85 +349,222 @@ export default function SettlementsView({
       </div>
 
       {/* Historical Settlements Audit Trail */}
-      <div className="glass-panel" style={{ overflow: "hidden" }}>
-        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-subtle)" }}>
-          <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#ffffff" }}>
-            Settlement Payout History
-          </h3>
+      {/* Filter Toolbar for History */}
+      <div className="glass-card" style={{ padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 260, flexWrap: "wrap" }}>
+          {/* Search Box */}
+          <div style={{ position: "relative", width: "100%", maxWidth: 300, flex: "1 1 200px" }}>
+            <Search size={16} color="var(--text-muted)" style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)" }} />
+            <input
+              id="input-search-settlements"
+              type="text"
+              placeholder="Search memo, partner name..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="input-field"
+              style={{ paddingLeft: 36, height: 40 }}
+            />
+          </div>
+
+          {/* Year Filter */}
+          <select
+            id="select-filter-settle-year"
+            value={yearFilter}
+            onChange={(e) => setYearFilter(e.target.value)}
+            className="input-field"
+            style={{ height: 40, width: "auto", minWidth: 110, flex: "1 1 100px" }}
+          >
+            {dynamicYearOptions.map((y) => (
+              <option key={y.value} value={y.value}>{y.label}</option>
+            ))}
+          </select>
+
+          {/* Partner Filter */}
+          <select
+            id="select-filter-settle-partner"
+            value={partnerFilter}
+            onChange={(e) => setPartnerFilter(e.target.value)}
+            className="input-field"
+            style={{ height: 40, width: "auto", minWidth: 130, flex: "1 1 120px" }}
+          >
+            <option value="all">All Partners</option>
+            {partners.map((p) => (
+              <option key={p.id} value={p.id}>{p.display_name}</option>
+            ))}
+          </select>
+
+          {/* Reset Filters */}
+          {hasActiveFilters && (
+            <button
+              id="btn-reset-settle-filters"
+              onClick={handleResetFilters}
+              className="btn-secondary"
+              style={{
+                height: 40,
+                padding: "0 12px",
+                fontSize: "0.82rem",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                color: "#f87171",
+                borderColor: "rgba(239, 68, 68, 0.3)",
+              }}
+            >
+              <RotateCcw size={13} />
+              <span>Reset</span>
+            </button>
+          )}
         </div>
 
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.88rem" }}>
-            <thead>
-              <tr style={{ background: "rgba(255, 255, 255, 0.03)", borderBottom: "1px solid var(--border-subtle)", color: "var(--text-muted)", fontSize: "0.76rem", textTransform: "uppercase" }}>
-                <th style={{ padding: "12px 18px" }}>Date</th>
-                <th style={{ padding: "12px 16px" }}>Paid From</th>
-                <th style={{ padding: "12px 16px" }}>Paid To</th>
-                <th style={{ padding: "12px 16px" }}>Notes / Memo</th>
-                <th style={{ padding: "12px 18px", textAlign: "right" }}>Amount Settled</th>
-              </tr>
-            </thead>
-            <tbody>
-              {settlements.length === 0 ? (
-                <tr>
-                  <td colSpan={5} style={{ padding: 40, textAlign: "center", color: "var(--text-secondary)" }}>
-                    No settlements have been recorded yet.
-                  </td>
+        <div style={{ fontSize: "0.84rem", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+          Showing: <strong className="tabular-nums" style={{ color: "#ffffff", fontSize: "0.96rem" }}>{filteredSettlements.length}</strong> of {settlements.length} payouts
+        </div>
+      </div>
+
+      {/* Historical Settlements Audit Trail (Desktop >= 900px) */}
+      <div className="desktop-table-container">
+        <div className="glass-panel" style={{ overflow: "hidden" }}>
+          <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border-subtle)" }}>
+            <h3 style={{ fontSize: "1rem", fontWeight: 700, color: "#ffffff" }}>
+              Settlement Payout History
+            </h3>
+          </div>
+
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "0.88rem" }}>
+              <thead>
+                <tr style={{ background: "rgba(255, 255, 255, 0.03)", borderBottom: "1px solid var(--border-subtle)", color: "var(--text-muted)", fontSize: "0.76rem", textTransform: "uppercase" }}>
+                  <th style={{ padding: "12px 18px" }}>Date</th>
+                  <th style={{ padding: "12px 16px" }}>Paid From</th>
+                  <th style={{ padding: "12px 16px" }}>Paid To</th>
+                  <th style={{ padding: "12px 16px" }}>Notes / Memo</th>
+                  <th style={{ padding: "12px 18px", textAlign: "right" }}>Amount Settled</th>
                 </tr>
-              ) : (
-                settlements.map((st: any) => (
-                  <tr key={st.id} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
-                    <td style={{ padding: "12px 18px", color: "var(--text-secondary)" }}>{st.date}</td>
-                    <td style={{ padding: "12px 16px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ width: 22, height: 22, borderRadius: "50%", background: st.from_user_color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.68rem", color: "#fff", fontWeight: 700 }}>
-                          {st.from_user_name?.charAt(0)}
+              </thead>
+              <tbody>
+                {filteredSettlements.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ padding: 40, textAlign: "center", color: "var(--text-secondary)" }}>
+                      {hasActiveFilters ? "No settlement records match your search or filter." : "No settlements have been recorded yet."}
+                      {hasActiveFilters && (
+                        <div style={{ marginTop: 10 }}>
+                          <button onClick={handleResetFilters} className="btn-secondary" style={{ fontSize: "0.82rem", margin: "0 auto" }}>
+                            Reset Filters
+                          </button>
                         </div>
-                        <span style={{ color: "#fff" }}>{st.from_user_name}</span>
-                      </div>
-                    </td>
-                    <td style={{ padding: "12px 16px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ width: 22, height: 22, borderRadius: "50%", background: st.to_user_color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.68rem", color: "#fff", fontWeight: 700 }}>
-                          {st.to_user_name?.charAt(0)}
-                        </div>
-                        <span style={{ color: "#fff" }}>{st.to_user_name}</span>
-                      </div>
-                    </td>
-                    <td style={{ padding: "12px 16px", color: "var(--text-muted)" }}>{st.notes || "—"}</td>
-                    <td style={{ padding: "12px 18px", textAlign: "right", fontWeight: 700, color: "#34d399" }}>
-                      {formatCurr(st.amount)}
+                      )}
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  filteredSettlements.map((st: any) => (
+                    <tr key={st.id} style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+                      <td style={{ padding: "12px 18px", color: "var(--text-secondary)" }}>{st.date}</td>
+                      <td style={{ padding: "12px 16px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ width: 22, height: 22, borderRadius: "50%", background: st.from_user_color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.68rem", color: "#fff", fontWeight: 700 }}>
+                            {st.from_user_name?.charAt(0)}
+                          </div>
+                          <span style={{ color: "#fff" }}>{st.from_user_name}</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: "12px 16px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ width: 22, height: 22, borderRadius: "50%", background: st.to_user_color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.68rem", color: "#fff", fontWeight: 700 }}>
+                            {st.to_user_name?.charAt(0)}
+                          </div>
+                          <span style={{ color: "#fff" }}>{st.to_user_name}</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: "12px 16px", color: "var(--text-muted)" }}>{st.notes || "—"}</td>
+                      <td style={{ padding: "12px 18px", textAlign: "right", fontWeight: 700, color: "#34d399" }}>
+                        {formatCurr(st.amount)}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
+      </div>
+
+      {/* Historical Settlements Mobile Card List (< 900px) */}
+      <div className="mobile-card-list">
+        <div style={{ fontSize: "0.8rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>
+          Settlement Payout History
+        </div>
+
+        {filteredSettlements.length === 0 ? (
+          <div className="glass-card" style={{ padding: 28, textAlign: "center", color: "var(--text-secondary)" }}>
+            {hasActiveFilters ? "No settlement records match your search." : "No settlements have been recorded yet."}
+          </div>
+        ) : (
+          filteredSettlements.map((st: any) => (
+            <div
+              key={st.id}
+              className="glass-card"
+              style={{
+                padding: "16px 14px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+                borderLeft: "3px solid #10b981",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <span style={{ fontSize: "0.76rem", color: "var(--text-secondary)" }}>
+                  {st.date}
+                </span>
+                <span style={{ fontSize: "1.1rem", fontWeight: 800, color: "#34d399" }}>
+                  +{formatCurr(st.amount)}
+                </span>
+              </div>
+
+              {/* Sender -> Receiver flow */}
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                background: "rgba(255, 255, 255, 0.02)",
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid var(--border-subtle)",
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ width: 26, height: 26, borderRadius: "50%", background: st.from_user_color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", color: "#fff", fontWeight: 700 }}>
+                    {st.from_user_name?.charAt(0)}
+                  </div>
+                  <div style={{ fontSize: "0.82rem", fontWeight: 600, color: "#ffffff" }}>
+                    {st.from_user_name}
+                  </div>
+                </div>
+
+                <ArrowRight size={15} color="#818cf8" />
+
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ width: 26, height: 26, borderRadius: "50%", background: st.to_user_color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.72rem", color: "#fff", fontWeight: 700 }}>
+                    {st.to_user_name?.charAt(0)}
+                  </div>
+                  <div style={{ fontSize: "0.82rem", fontWeight: 600, color: "#ffffff" }}>
+                    {st.to_user_name}
+                  </div>
+                </div>
+              </div>
+
+              {st.notes && (
+                <div style={{ fontSize: "0.76rem", color: "var(--text-muted)" }}>
+                  Memo: {st.notes}
+                </div>
+              )}
+            </div>
+          ))
+        )}
       </div>
 
       {/* Record Settlement Payout Modal */}
       {showModal && (
-        <div style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0, 0, 0, 0.75)",
-          backdropFilter: "blur(8px)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 100,
-          padding: 20,
-        }}>
-          <div style={{
-            width: "100%",
-            maxWidth: 480,
-            background: "#0f172a",
-            border: "1px solid var(--border-medium)",
-            borderRadius: 20,
-            padding: 28,
-            boxShadow: "0 20px 50px rgba(0, 0, 0, 0.7)",
-          }}>
+        <div className="modal-overlay">
+          <div className="modal-container" style={{ maxWidth: 480 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
               <h3 style={{ fontSize: "1.15rem", fontWeight: 700, color: "#ffffff" }}>
                 Record Settlement Transfer
@@ -366,7 +575,7 @@ export default function SettlementsView({
             </div>
 
             <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="responsive-grid-equal">
                 <div>
                   <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
                     Sender (Paid By) *
@@ -404,7 +613,7 @@ export default function SettlementsView({
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div className="responsive-grid-equal">
                 <div>
                   <label style={{ fontSize: "0.78rem", color: "var(--text-muted)", display: "block", marginBottom: 6 }}>
                     Settlement Amount *

@@ -12,6 +12,7 @@
     "@types/pg": "^8.23.1",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.0.3",
+    "jszip": "^3.10.2",
     "lucide-react": "^1.52.0",
     "mammoth": "^1.13.0",
     "marked": "^18.1.0",

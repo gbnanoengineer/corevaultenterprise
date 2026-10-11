@@ -16,6 +16,9 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
     const search = searchParams.get("search");
+    const year = searchParams.get("year");
+    const month = searchParams.get("month");
+    const receivedBy = searchParams.get("receivedBy");
 
     let query = `
       SELECT i.*, u.display_name as received_by_name, u.avatar_color as received_by_color,
@@ -31,9 +34,23 @@ export async function GET(req: Request) {
       query += ` AND i.status = ?`;
       params.push(status);
     }
+    if (receivedBy && receivedBy !== "all") {
+      query += ` AND i.received_by_user_id = ?`;
+      params.push(receivedBy);
+    }
     if (search) {
       query += ` AND (i.title LIKE ? OR i.client_name LIKE ? OR i.notes LIKE ?)`;
       params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+    if (year && year !== "all" && month && month !== "all") {
+      query += ` AND i.date LIKE ?`;
+      params.push(`${year}-${month.padStart(2, "0")}%`);
+    } else if (year && year !== "all") {
+      query += ` AND i.date LIKE ?`;
+      params.push(`${year}%`);
+    } else if (month && month !== "all") {
+      query += ` AND i.date LIKE ?`;
+      params.push(`%-${month.padStart(2, "0")}-%`);
     }
 
     query += ` ORDER BY i.date DESC, i.created_at DESC`;
@@ -43,8 +60,18 @@ export async function GET(req: Request) {
     const totalReceived = db.prepare(`SELECT SUM(amount) as total FROM incomes WHERE status = 'received' AND organization_id = ?`).get(orgId) as { total: number | null };
     const totalPending = db.prepare(`SELECT SUM(amount) as total FROM incomes WHERE status = 'pending' AND organization_id = ?`).get(orgId) as { total: number | null };
 
+    // Query distinct years dynamically based on real data
+    const yearRows = db.prepare(`
+      SELECT DISTINCT substr(date, 1, 4) as year
+      FROM incomes
+      WHERE organization_id = ? AND date IS NOT NULL AND length(date) >= 4
+      ORDER BY year DESC
+    `).all(orgId) as { year: string }[];
+    const availableYears = yearRows.map((r) => r.year).filter((y) => /^\d{4}$/.test(y));
+
     return NextResponse.json({
       incomes,
+      availableYears,
       summary: {
         totalReceived: totalReceived?.total || 0,
         totalPending: totalPending?.total || 0,

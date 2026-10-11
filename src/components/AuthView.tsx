@@ -17,6 +17,7 @@ import {
   RotateCw,
   Sparkles
 } from "lucide-react";
+import { CoreVaultIcon } from "./CoreVaultLogo";
 
 interface AuthViewProps {
   orgName?: string;
@@ -56,7 +57,6 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
-  const [debugOtp, setDebugOtp] = useState("");
 
   // Check URL params on mount (?inviteToken=... or ?resetToken=...)
   useEffect(() => {
@@ -79,10 +79,6 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
               } else {
                 setStep("signup_otp");
                 setSuccessMessage(`Welcome! You've been invited to join ${data.orgName}. We dispatched a 6-digit verification code to ${data.email}.`);
-                if (data.debugOtp) {
-                  setDebugOtp(data.debugOtp);
-                  setOtp(data.debugOtp);
-                }
               }
             } else if (data.error) {
               setError(data.error);
@@ -96,7 +92,6 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
   const clearMessages = () => {
     setError("");
     setSuccessMessage("");
-    setDebugOtp("");
   };
 
   // STEP 1: Single unified email submit
@@ -130,11 +125,8 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
       } else {
         // New user -> OTP was dispatched by check-email route
         setStep("signup_otp");
+        setOtp("");
         setSuccessMessage(`We sent a 6-digit verification code to ${cleanEmail} via Resend.`);
-        if (data.debugOtp) {
-          setDebugOtp(data.debugOtp);
-          setOtp(data.debugOtp);
-        }
       }
     } catch {
       setError("Network or server connection error. Please try again.");
@@ -205,10 +197,7 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
         setError(data.error || "Failed to send verification code.");
       } else {
         setSuccessMessage(data.message || `Code sent to ${email}.`);
-        if (data.debugOtp) {
-          setDebugOtp(data.debugOtp);
-          setOtp(data.debugOtp);
-        }
+        setOtp("");
         if (purpose === "login") {
           setStep("login_otp");
         } else {
@@ -466,18 +455,8 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
       }}>
         {/* Brand Header */}
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{
-            width: 52,
-            height: 52,
-            borderRadius: 14,
-            background: "linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%)",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            boxShadow: "0 0 24px rgba(99, 102, 241, 0.45)",
-            marginBottom: 16
-          }}>
-            <Layers size={28} color="#ffffff" />
+          <div style={{ marginBottom: 16, display: "inline-block" }}>
+            <CoreVaultIcon size={52} iconSize={28} />
           </div>
 
           <h1 style={{ fontSize: "1.5rem", fontWeight: 800, color: "#ffffff", letterSpacing: "-0.02em", margin: "0 0 6px 0" }}>
@@ -594,23 +573,6 @@ export default function AuthView({ orgName = "Acme Core Ventures", onLoginSucces
           </div>
         )}
 
-        {/* Debug OTP Banner (development mode) */}
-        {debugOtp && (
-          <div style={{
-            padding: "12px 14px",
-            background: "rgba(56, 189, 248, 0.1)",
-            border: "1px dashed rgba(56, 189, 248, 0.35)",
-            borderRadius: 10,
-            fontSize: "0.82rem",
-            color: "#38bdf8",
-            marginBottom: 20
-          }}>
-            <div style={{ fontWeight: 600, marginBottom: 2 }}>Verification Code (Resend OTP):</div>
-            <code style={{ fontSize: "1.1rem", letterSpacing: "0.15em", fontWeight: 800 }}>
-              {debugOtp}
-            </code>
-          </div>
-        )}
 
         {/* -------------------- STEP 1: SINGLE EMAIL ENTRY -------------------- */}
         {step === "email_entry" && (
